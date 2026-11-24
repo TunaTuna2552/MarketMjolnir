@@ -1,15 +1,15 @@
 // ============================================================================
-// MARKET MJOLNIR · REGLAS DE NEGOCIO, VALIDACIONES Y PERSISTENCIA LOCAL
+// MARKET MJOLNIR · REGLAS DE NEGOCIO, VALIDACIONES Y PERSISTENCIA LOCAL (v2.0)
 // ============================================================================
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MARCA_INFO } from '../data/catalogoHalo';
+import { normalizarProductosV2 } from './reglasV2';
 
-const STORAGE_KEY = '@market_mjolnir_unsc_state_v1';
+const STORAGE_KEY = '@market_mjolnir_unsc_state_v2';
 
 /**
  * Formatea un número entero positivo a pesos colombianos (COP) sin decimales.
- * Ejemplo: 185000 -> "$185.000 COP"
  */
 export function formatearCOP(valor) {
   const numeroSeguro = Number.isFinite(Number(valor)) ? Math.max(0, Math.round(Number(valor))) : 0;
@@ -18,8 +18,7 @@ export function formatearCOP(valor) {
 }
 
 /**
- * Calcula subtotal, descuento de cupón, costo de envío y total del carrito (HU11 y HU17).
- * Utiliza reduce() sobre el arreglo inmutable del carrito.
+ * Compatibilidad Taller 4 (HU11 y HU17).
  */
 export function calcularResumenCarrito(carrito, cuponAplicado = null) {
   if (!Array.isArray(carrito) || carrito.length === 0) {
@@ -36,16 +35,13 @@ export function calcularResumenCarrito(carrito, cuponAplicado = null) {
   const totalUnidades = carrito.reduce((acum, item) => acum + item.cantidad, 0);
   const subtotal = carrito.reduce((acum, item) => acum + item.precio * item.cantidad, 0);
 
-  // HU17: Cupón BIENVENIDO10 descuenta el 10% del subtotal sin valores negativos
   const descuento =
     cuponAplicado === MARCA_INFO.cuponValido.codigo
       ? Math.round(subtotal * (MARCA_INFO.cuponValido.porcentajeDescuento / 100))
       : 0;
 
-  // HU11: Envío = $8.000 cuando subtotal < $150.000; Gratis ($0) cuando subtotal >= $150.000
   const envioGratis = subtotal >= MARCA_INFO.reglasEnvio.umbralEnvioGratis;
   const envio = envioGratis ? 0 : MARCA_INFO.reglasEnvio.costoEnvioEstandar;
-
   const total = Math.max(0, subtotal - descuento + envio);
 
   return {
@@ -58,9 +54,6 @@ export function calcularResumenCarrito(carrito, cuponAplicado = null) {
   };
 }
 
-/**
- * Calcula el promedio de estrellas de un arreglo de reseñas (HU19-CA03).
- */
 export function calcularPromedioEstrellas(resenas) {
   if (!Array.isArray(resenas) || resenas.length === 0) {
     return { promedio: 0, texto: 'Sin reseñas', cantidad: 0 };
@@ -74,9 +67,6 @@ export function calcularPromedioEstrellas(resenas) {
   };
 }
 
-/**
- * Valida los datos básicos del comprador antes de confirmar pedido (HU12).
- */
 export function validarFormularioComprador({ nombre, telefono, municipio, direccion }) {
   const faltantes = [];
 
@@ -87,7 +77,7 @@ export function validarFormularioComprador({ nombre, telefono, municipio, direcc
     faltantes.push('Teléfono de contacto');
   }
   if (!municipio || municipio.trim().length === 0) {
-    faltantes.push('Municipio (ej. Mosquera, Madrid, Funza)');
+    faltantes.push('Municipio');
   }
   if (!direccion || direccion.trim().length === 0) {
     faltantes.push('Dirección de entrega');
@@ -108,9 +98,6 @@ export function validarFormularioComprador({ nombre, telefono, municipio, direcc
   };
 }
 
-/**
- * Valida la creación o edición de un producto en el Panel de Vendedor (HU18).
- */
 export function validarProductoVendedor({ nombre, categoria, precioTexto, stockTexto, descripcion }) {
   if (!nombre || nombre.trim().length < 3) {
     return {
@@ -127,11 +114,7 @@ export function validarProductoVendedor({ nombre, categoria, precioTexto, stockT
   }
 
   const precioNumero = Number(precioTexto);
-  if (
-    precioTexto === '' ||
-    !Number.isInteger(precioNumero) ||
-    precioNumero <= 0
-  ) {
+  if (precioTexto === '' || !Number.isInteger(precioNumero) || precioNumero <= 0) {
     return {
       valido: false,
       mensaje: 'Error: El precio debe ser un número entero positivo mayor a $0 COP (sin decimales).',
@@ -139,21 +122,17 @@ export function validarProductoVendedor({ nombre, categoria, precioTexto, stockT
   }
 
   const stockNumero = Number(stockTexto);
-  if (
-    stockTexto === '' ||
-    !Number.isInteger(stockNumero) ||
-    stockNumero < 0
-  ) {
+  if (stockTexto === '' || !Number.isInteger(stockNumero) || stockNumero < 0) {
     return {
       valido: false,
-      mensaje: 'Error: El stock debe ser un número entero no negativo (0 o mayor). No se admite stock negativo.',
+      mensaje: 'Error: El stock debe ser un número entero no negativo (0 o mayor).',
     };
   }
 
   if (!descripcion || descripcion.trim().length < 15) {
     return {
       valido: false,
-      mensaje: 'La descripción táctica debe tener al menos 15 caracteres (Regla del modelo de producto).',
+      mensaje: 'La descripción táctica debe tener al menos 15 caracteres.',
     };
   }
 
@@ -165,9 +144,6 @@ export function validarProductoVendedor({ nombre, categoria, precioTexto, stockT
   };
 }
 
-/**
- * Valida una reseña ficticia (HU19: entero entre 1 y 5).
- */
 export function validarValoracionResena(valorTexto, autorTexto, comentarioTexto) {
   const numero = Number(valorTexto);
   if (
@@ -197,16 +173,11 @@ export function validarValoracionResena(valorTexto, autorTexto, comentarioTexto)
   };
 }
 
-/**
- * Sanitiza y valida datos recuperados de almacenamiento local para evitar
- * valores corruptos o inventarios negativos (HU20-CA02).
- */
 function sanitizarEstadoRecuperado(parsed, productosPorDefecto) {
   if (!parsed || typeof parsed !== 'object') {
     return null;
   }
 
-  // Validar productos
   let productosSeguros = productosPorDefecto;
   if (Array.isArray(parsed.productos) && parsed.productos.length >= 12) {
     const todosValidos = parsed.productos.every(
@@ -221,17 +192,16 @@ function sanitizarEstadoRecuperado(parsed, productosPorDefecto) {
         p.stock >= 0
     );
     if (todosValidos) {
-      productosSeguros = parsed.productos;
+      productosSeguros = normalizarProductosV2(parsed.productos, productosPorDefecto);
     }
   }
 
-  // Validar carrito (sin cantidades negativas ni precios corruptos)
   let carritoSeguro = [];
   if (Array.isArray(parsed.carrito)) {
     carritoSeguro = parsed.carrito.filter(
       (item) =>
         item &&
-        typeof item.id === 'string' &&
+        typeof (item.productoId || item.id) === 'string' &&
         typeof item.nombre === 'string' &&
         Number.isInteger(item.precio) &&
         item.precio > 0 &&
@@ -240,24 +210,20 @@ function sanitizarEstadoRecuperado(parsed, productosPorDefecto) {
     );
   }
 
-  // Validar favoritos
-  let favoritosSeguros = [];
-  if (Array.isArray(parsed.favoritos)) {
-    favoritosSeguros = parsed.favoritos.filter((id) => typeof id === 'string');
-  }
+  const favoritosSeguros = Array.isArray(parsed.favoritos)
+    ? parsed.favoritos.filter((id) => typeof id === 'string')
+    : [];
 
-  // Validar historial de pedidos
-  let historialSeguro = [];
-  if (Array.isArray(parsed.historialPedidos)) {
-    historialSeguro = parsed.historialPedidos.filter(
-      (ped) =>
-        ped &&
-        typeof ped.codigo === 'string' &&
-        Array.isArray(ped.articulos) &&
-        Number.isFinite(ped.total) &&
-        ped.total >= 0
-    );
-  }
+  const historialSeguro = Array.isArray(parsed.historialPedidos)
+    ? parsed.historialPedidos.filter(
+        (ped) =>
+          ped &&
+          typeof ped.codigo === 'string' &&
+          Array.isArray(ped.articulos) &&
+          Number.isFinite(ped.total) &&
+          ped.total >= 0
+      )
+    : null;
 
   const cuponSeguro =
     parsed.cuponAplicado === MARCA_INFO.cuponValido.codigo
@@ -270,12 +236,29 @@ function sanitizarEstadoRecuperado(parsed, productosPorDefecto) {
     favoritos: favoritosSeguros,
     historialPedidos: historialSeguro,
     cuponAplicado: cuponSeguro,
+    comparacion: Array.isArray(parsed.comparacion)
+      ? parsed.comparacion.filter((id) => typeof id === 'string').slice(0, 3)
+      : [],
+    direcciones: Array.isArray(parsed.direcciones) ? parsed.direcciones : null,
+    direccionSeleccionadaId:
+      typeof parsed.direccionSeleccionadaId === 'string' || parsed.direccionSeleccionadaId === null
+        ? parsed.direccionSeleccionadaId
+        : undefined,
+    modalidadEnvio:
+      parsed.modalidadEnvio === 'estandar' || parsed.modalidadEnvio === 'expres'
+        ? parsed.modalidadEnvio
+        : undefined,
+    consultas: Array.isArray(parsed.consultas) ? parsed.consultas : null,
+    notificaciones: Array.isArray(parsed.notificaciones) ? parsed.notificaciones : [],
+    suscripcionesReposicion: Array.isArray(parsed.suscripcionesReposicion)
+      ? parsed.suscripcionesReposicion
+      : [],
+    ticketsSoporte: Array.isArray(parsed.ticketsSoporte) ? parsed.ticketsSoporte : [],
+    modoOscuro: typeof parsed.modoOscuro === 'boolean' ? parsed.modoOscuro : true,
+    letraGrande: typeof parsed.letraGrande === 'boolean' ? parsed.letraGrande : false,
   };
 }
 
-/**
- * Carga el estado desde AsyncStorage (o localStorage en web) de manera segura (HU20).
- */
 export async function cargarEstadoLocal(productosPorDefecto) {
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEY);
@@ -285,14 +268,10 @@ export async function cargarEstadoLocal(productosPorDefecto) {
     const parsed = JSON.parse(raw);
     return sanitizarEstadoRecuperado(parsed, productosPorDefecto);
   } catch (error) {
-    // HU20-CA02 y CA03: Si hay corrupción o falla de lectura, usa estado inicial seguro
     return null;
   }
 }
 
-/**
- * Guarda el estado actual en AsyncStorage (HU20-CA01).
- */
 export async function guardarEstadoLocal(estado) {
   try {
     const payload = JSON.stringify({
@@ -301,6 +280,16 @@ export async function guardarEstadoLocal(estado) {
       favoritos: estado.favoritos,
       historialPedidos: estado.historialPedidos,
       cuponAplicado: estado.cuponAplicado,
+      comparacion: estado.comparacion,
+      direcciones: estado.direcciones,
+      direccionSeleccionadaId: estado.direccionSeleccionadaId,
+      modalidadEnvio: estado.modalidadEnvio,
+      consultas: estado.consultas,
+      notificaciones: estado.notificaciones,
+      suscripcionesReposicion: estado.suscripcionesReposicion,
+      ticketsSoporte: estado.ticketsSoporte,
+      modoOscuro: estado.modoOscuro,
+      letraGrande: estado.letraGrande,
     });
     await AsyncStorage.setItem(STORAGE_KEY, payload);
   } catch (error) {
@@ -308,9 +297,6 @@ export async function guardarEstadoLocal(estado) {
   }
 }
 
-/**
- * Borra el almacenamiento local para restaurar datos de fábrica en sustentación.
- */
 export async function limpiarEstadoLocal() {
   try {
     await AsyncStorage.removeItem(STORAGE_KEY);
