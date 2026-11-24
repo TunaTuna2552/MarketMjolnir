@@ -1,6 +1,6 @@
 # Reflexión Técnica · Market Mjolnir 2.0 (Taller 5)
 
-**Aprendiz:** *(Tu nombre completo)*  
+**Aprendiz:** *Cristian Fabian Tunaroza Rodriguez*  
 **Aplicación:** Market Mjolnir (`MM-117`) · Rama `marketplace-v2`  
 **Alcance:** Ampliación de Marketplace v1.0 (Taller 4) a v2.0 con HU21–HU35 en React Native + Expo.
 
