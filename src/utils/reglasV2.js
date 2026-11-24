@@ -9,7 +9,7 @@ import {
   MODALIDADES_ENVIO,
   REGLAS_V2,
   TARIFAS_ENVIO_V2,
-} from '../data/constantesV2';
+} from '../data/constantesV2.js';
 
 export function formatearFechaHoraActual() {
   const ahora = new Date();
