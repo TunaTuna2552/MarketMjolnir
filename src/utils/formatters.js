@@ -254,7 +254,7 @@ function sanitizarEstadoRecuperado(parsed, productosPorDefecto) {
       ? parsed.suscripcionesReposicion
       : [],
     ticketsSoporte: Array.isArray(parsed.ticketsSoporte) ? parsed.ticketsSoporte : [],
-    modoOscuro: typeof parsed.modoOscuro === 'boolean' ? parsed.modoOscuro : true,
+    modoOscuro: typeof parsed.modoOscuro === 'boolean' ? parsed.modoOscuro : false,
     letraGrande: typeof parsed.letraGrande === 'boolean' ? parsed.letraGrande : false,
   };
 }

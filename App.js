@@ -98,7 +98,7 @@ export default function App() {
   const [notificaciones, setNotificaciones] = useState([]);
   const [suscripcionesReposicion, setSuscripcionesReposicion] = useState([]);
   const [ticketsSoporte, setTicketsSoporte] = useState([]);
-  const [modoOscuro, setModoOscuro] = useState(true);
+  const [modoOscuro, setModoOscuro] = useState(false);
   const [letraGrande, setLetraGrande] = useState(false);
 
   // Navegación
@@ -1183,14 +1183,19 @@ export default function App() {
           style={[
             styles.cardVisualHeader,
             {
-              backgroundColor: item.colorTarjeta || configCat.colorFondo,
+              backgroundColor: tema.tarjetaSecundaria,
               borderBottomColor: tema.borde,
             },
           ]}
         >
           <View style={styles.cardTopRow}>
-            <View style={[styles.badgeCodigo, { borderColor: configCat.colorAcento }]}>
-              <Text style={[styles.badgeCodigoTexto, { color: configCat.colorAcento, fontSize: fs(10) }]}>
+            <View
+              style={[
+                styles.badgeCodigo,
+                { backgroundColor: tema.tarjeta, borderColor: tema.borde },
+              ]}
+            >
+              <Text style={[styles.badgeCodigoTexto, { color: tema.textoSecundario, fontSize: fs(10) }]}>
                 {item.id} · {item.marca || 'UNSC'}
               </Text>
             </View>
@@ -1200,10 +1205,18 @@ export default function App() {
                 onPress={() => manejarToggleComparar(item)}
                 style={[
                   styles.btnFavoritoIcono,
-                  enComparador && { backgroundColor: tema.infoFondo, borderColor: tema.info },
+                  {
+                    backgroundColor: enComparador ? tema.primarioFondo : tema.tarjeta,
+                    borderColor: enComparador ? tema.primario : tema.borde,
+                  },
                 ]}
               >
-                <Text style={[styles.btnFavoritoTexto, { color: enComparador ? tema.info : '#E2E8F0', fontSize: fs(11) }]}>
+                <Text
+                  style={[
+                    styles.btnFavoritoTexto,
+                    { color: enComparador ? tema.primario : tema.textoSecundario, fontSize: fs(11) },
+                  ]}
+                >
                   {enComparador ? '✓ Comp.' : '⚖️ Comp.'}
                 </Text>
               </Pressable>
@@ -1212,17 +1225,30 @@ export default function App() {
                 onPress={() => alternarFavorito(item)}
                 style={[
                   styles.btnFavoritoIcono,
-                  esFavorito && styles.btnFavoritoIconoActivo,
+                  {
+                    backgroundColor: esFavorito ? tema.primarioFondo : tema.tarjeta,
+                    borderColor: esFavorito ? tema.primario : tema.borde,
+                  },
                 ]}
               >
-                <Text style={[styles.btnFavoritoTexto, { fontSize: fs(11) }]}>
+                <Text
+                  style={[
+                    styles.btnFavoritoTexto,
+                    { color: esFavorito ? tema.primario : tema.textoSecundario, fontSize: fs(11) },
+                  ]}
+                >
                   {esFavorito ? '★ FAV' : '☆ FAV'}
                 </Text>
               </Pressable>
             </View>
           </View>
 
-          <View style={styles.cardImagenWrapper}>
+          <View
+            style={[
+              styles.cardImagenWrapper,
+              { backgroundColor: tema.tarjeta, borderColor: tema.borde },
+            ]}
+          >
             <Image
               source={obtenerFuenteImagen(item)}
               style={styles.cardImagenOficial}
@@ -1231,10 +1257,10 @@ export default function App() {
           </View>
 
           <View style={styles.cardFooterHudRow}>
-            <Text style={[styles.cardCategoriaTag, { color: configCat.colorAcento, fontSize: fs(11) }]}>
+            <Text style={[styles.cardCategoriaTag, { color: tema.primario, fontSize: fs(11) }]}>
               {configCat.icono} {item.categoria.toUpperCase()}
             </Text>
-            <Text style={[styles.cardEstrellasTexto, { fontSize: fs(12) }]}>
+            <Text style={[styles.cardEstrellasTexto, { color: tema.textoSecundario, fontSize: fs(12) }]}>
               {infoEstrellas.texto}
             </Text>
           </View>
@@ -1728,12 +1754,17 @@ export default function App() {
               style={[
                 styles.btnFavoritoDetalle,
                 {
-                  backgroundColor: esFavorito ? tema.secundarioFondo : tema.superficie,
-                  borderColor: esFavorito ? tema.secundario : tema.borde,
+                  backgroundColor: esFavorito ? tema.primarioFondo : tema.superficie,
+                  borderColor: esFavorito ? tema.primario : tema.borde,
                 },
               ]}
             >
-              <Text style={[styles.btnFavoritoTexto, { fontSize: fs(12) }]}>
+              <Text
+                style={[
+                  styles.btnFavoritoTexto,
+                  { color: esFavorito ? tema.primario : tema.textoSecundario, fontSize: fs(12) },
+                ]}
+              >
                 {esFavorito ? '★ Favorito' : '☆ Favorito'}
               </Text>
             </Pressable>
@@ -1751,22 +1782,27 @@ export default function App() {
             style={[
               styles.detalleHeroBanner,
               {
-                backgroundColor: productoDetalle.colorTarjeta || configCat.colorFondo,
+                backgroundColor: tema.tarjetaSecundaria,
                 borderBottomColor: tema.borde,
               },
             ]}
           >
-            <View style={styles.detalleImagenWrapper}>
+            <View
+              style={[
+                styles.detalleImagenWrapper,
+                { backgroundColor: tema.tarjeta, borderColor: tema.borde },
+              ]}
+            >
               <Image
                 source={obtenerFuenteImagen(productoDetalle)}
                 style={styles.detalleImagenOficial}
                 resizeMode="contain"
               />
             </View>
-            <Text style={[styles.detalleInsigniaCodigo, { color: configCat.colorAcento, fontSize: fs(12) }]}>
+            <Text style={[styles.detalleInsigniaCodigo, { color: tema.primario, fontSize: fs(12) }]}>
               {productoDetalle.id} · {productoDetalle.marca || 'Materials Group UNSC'}
             </Text>
-            <Text style={[styles.detalleCategoriaTexto, { fontSize: fs(13) }]}>
+            <Text style={[styles.detalleCategoriaTexto, { color: tema.textoSecundario, fontSize: fs(13) }]}>
               Categoría: {productoDetalle.categoria}
             </Text>
           </View>
@@ -3626,13 +3662,13 @@ export default function App() {
       <View
         style={[
           styles.headerMarca,
-          { backgroundColor: tema.headerFondo, borderBottomColor: tema.primario },
+          { backgroundColor: tema.headerFondo, borderBottomColor: '#38BDF8' },
         ]}
       >
         <View style={styles.headerTopRow}>
-          <View style={[styles.logoBadge, { borderColor: tema.primario }]}>
+          <View style={[styles.logoBadge, { borderColor: '#38BDF8' }]}>
             <Text style={styles.logoIconoTexto}>{MARCA_INFO.icono}</Text>
-            <Text style={[styles.logoCodigoTexto, { color: tema.primario }]}>
+            <Text style={[styles.logoCodigoTexto, { color: '#7DD3FC' }]}>
               {MARCA_INFO.codigoMarca}
             </Text>
           </View>
@@ -3660,7 +3696,7 @@ export default function App() {
               onPress={() => setLetraGrande((v) => !v)}
               style={[
                 styles.btnAccesibilidad,
-                letraGrande && { borderColor: '#4ADE80', backgroundColor: '#153826' },
+                letraGrande && { borderColor: '#38BDF8', backgroundColor: '#0C2D48' },
               ]}
             >
               <Text style={styles.btnAccesibilidadTxt}>
@@ -3821,13 +3857,13 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 10,
-    backgroundColor: '#132A1F',
-    borderWidth: 2,
+    backgroundColor: '#0F172A',
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
   },
   logoIconoTexto: {
-    color: '#F59E0B',
+    color: '#38BDF8',
     fontSize: 18,
     fontWeight: '900',
   },
@@ -3842,11 +3878,11 @@ const styles = StyleSheet.create({
   headerNombreMarca: {
     color: '#F8FAFC',
     fontWeight: '900',
-    letterSpacing: 1,
+    letterSpacing: 0.8,
   },
   headerEslogan: {
-    color: '#F59E0B',
-    fontWeight: '600',
+    color: '#CBD5E1',
+    fontWeight: '500',
     marginTop: 2,
   },
   accesibilidadControls: {
@@ -3854,9 +3890,9 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   btnAccesibilidad: {
-    backgroundColor: '#162231',
+    backgroundColor: '#334155',
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#475569',
     borderRadius: 8,
     paddingHorizontal: 9,
     paddingVertical: 6,
@@ -3864,7 +3900,7 @@ const styles = StyleSheet.create({
   btnAccesibilidadTxt: {
     color: '#F8FAFC',
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   navBarScroll: {
     marginTop: 2,
@@ -3876,21 +3912,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 8,
-    backgroundColor: '#162231',
+    backgroundColor: '#334155',
     borderWidth: 1,
-    borderColor: '#26384E',
+    borderColor: '#475569',
     marginRight: 8,
   },
   navTabActiva: {
-    backgroundColor: '#163A28',
-    borderColor: '#4ADE80',
+    backgroundColor: '#0284C7',
+    borderColor: '#7DD3FC',
   },
   navTabTexto: {
-    color: '#94A3B8',
+    color: '#CBD5E1',
     fontWeight: '700',
   },
   navTabTextoActivo: {
-    color: '#4ADE80',
+    color: '#FFFFFF',
   },
   toastBanner: {
     flexDirection: 'row',
@@ -4088,7 +4124,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
-    backgroundColor: 'rgba(10, 15, 20, 0.75)',
   },
   badgeCodigoTexto: {
     fontWeight: '800',
@@ -4097,25 +4132,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: 6,
-    backgroundColor: 'rgba(15, 23, 34, 0.85)',
     borderWidth: 1,
-    borderColor: '#475569',
   },
   btnFavoritoIconoActivo: {
-    backgroundColor: '#3B2A0E',
-    borderColor: '#F59E0B',
+    backgroundColor: '#E0F2FE',
+    borderColor: '#0284C7',
   },
   btnFavoritoTexto: {
-    color: '#F59E0B',
+    color: '#0284C7',
     fontWeight: '800',
   },
   cardImagenWrapper: {
     width: '100%',
     height: 170,
-    backgroundColor: 'rgba(7, 11, 16, 0.55)',
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 8,
@@ -4131,11 +4162,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cardCategoriaTag: {
-    fontWeight: '900',
+    fontWeight: '800',
   },
   cardEstrellasTexto: {
-    color: '#FBBF24',
-    fontWeight: '800',
+    fontWeight: '700',
   },
   cardBody: {
     padding: 12,
@@ -4222,9 +4252,9 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 8,
-    backgroundColor: '#0A0F14',
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: '#26384E',
+    borderColor: '#CBD5E1',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
@@ -4302,10 +4332,8 @@ const styles = StyleSheet.create({
   detalleImagenWrapper: {
     width: '100%',
     height: 220,
-    backgroundColor: 'rgba(7, 11, 16, 0.65)',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 10,
@@ -4319,8 +4347,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   detalleCategoriaTexto: {
-    color: '#CBD5E1',
-    fontWeight: '700',
+    fontWeight: '600',
     marginTop: 4,
   },
   detalleContenido: {
