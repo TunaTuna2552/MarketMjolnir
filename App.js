@@ -1,71 +1,152 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import {
-  StyleSheet,
-  Text,
-  View,
-  TextInput,
-  Image,
-  ScrollView,
   FlatList,
+  Image,
+  Platform,
   Pressable,
   SafeAreaView,
-  Platform,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 
 import {
-  MARCA_INFO,
   CATEGORIAS_CONFIG,
+  CONSULTAS_INICIALES,
+  DIRECCIONES_INICIALES,
+  MARCA_INFO,
+  MODALIDADES_ENVIO,
+  PEDIDOS_INICIALES_V2,
   PRODUCTOS_INICIALES,
+  REGLAS_V2,
+  TEMAS_APP,
   obtenerFuenteImagen,
 } from './src/data/catalogoHalo';
 
 import {
-  formatearCOP,
-  calcularResumenCarrito,
   calcularPromedioEstrellas,
-  validarFormularioComprador,
-  validarProductoVendedor,
-  validarValoracionResena,
   cargarEstadoLocal,
+  formatearCOP,
   guardarEstadoLocal,
   limpiarEstadoLocal,
+  validarProductoVendedor,
+  validarValoracionResena,
 } from './src/utils/formatters';
+
+import {
+  agregarNotificacionUnica,
+  aplicarFiltrosCatalogo,
+  avanzarEstadoPedido,
+  calcularEnvioV2,
+  calcularResumenCarritoV2,
+  cancelarPedidoControlado,
+  cancelarSuscripcionReposicion,
+  construirClaveCarrito,
+  crearTicketSoporte,
+  descontarStockPorItems,
+  ejecutarReposicionSimulada,
+  evaluarCancelacionPedido,
+  evaluarDevolucionPedido,
+  formatearFechaHoraActual,
+  generarRespuestaSimuladaPregunta,
+  generarTextoCompartirProducto,
+  guardarDireccionEnLista,
+  marcarDireccionPrincipal,
+  marcarNotificacionLeida,
+  obtenerMarcasDisponibles,
+  obtenerRecomendacionesRelacionadas,
+  obtenerSiguienteEstadoPedido,
+  obtenerStockProducto,
+  obtenerVarianteProducto,
+  simularRespuestaTicket,
+  sincronizarStockDesdeVariantes,
+  solicitarDevolucionPedido,
+  suscribirReposicion,
+  tieneMultiplesVariantes,
+  toggleComparacion,
+  validarPreguntaProducto,
+  validarRangoPrecio,
+} from './src/utils/reglasV2';
+
+import PanelComparador from './src/components/PanelComparador';
+import VistaDirecciones from './src/components/VistaDirecciones';
+import VistaNotificaciones from './src/components/VistaNotificaciones';
+import VistaSoporte from './src/components/VistaSoporte';
 
 export default function App() {
   // ==========================================================================
-  // 1. ESTADOS PRINCIPALES EN MEMORIA (useState) + PERSISTENCIA LOCAL (HU20)
+  // 1. ESTADOS PRINCIPALES EN MEMORIA (useState) + PERSISTENCIA LOCAL
   // ==========================================================================
   const [productos, setProductos] = useState(PRODUCTOS_INICIALES);
   const [favoritos, setFavoritos] = useState(['PROD-001']);
   const [carrito, setCarrito] = useState([]);
-  const [historialPedidos, setHistorialPedidos] = useState([]);
+  const [historialPedidos, setHistorialPedidos] = useState(PEDIDOS_INICIALES_V2);
   const [hidratado, setHidratado] = useState(false);
 
-  // Navegación entre vistas: 'catalogo' | 'detalle' | 'favoritos' | 'carrito' | 'historial' | 'vendedor' | 'marca'
+  // Estados nuevos Taller 5 (HU22–HU35)
+  const [comparacion, setComparacion] = useState([]);
+  const [direcciones, setDirecciones] = useState(DIRECCIONES_INICIALES);
+  const [direccionSeleccionadaId, setDireccionSeleccionadaId] = useState(
+    DIRECCIONES_INICIALES[0]?.id || null
+  );
+  const [modalidadEnvio, setModalidadEnvio] = useState('estandar');
+  const [consultas, setConsultas] = useState(CONSULTAS_INICIALES);
+  const [notificaciones, setNotificaciones] = useState([]);
+  const [suscripcionesReposicion, setSuscripcionesReposicion] = useState([]);
+  const [ticketsSoporte, setTicketsSoporte] = useState([]);
+  const [modoOscuro, setModoOscuro] = useState(true);
+  const [letraGrande, setLetraGrande] = useState(false);
+
+  // Navegación
   const [vistaActual, setVistaActual] = useState('catalogo');
   const [vistaAnterior, setVistaAnterior] = useState('catalogo');
   const [productoDetalleId, setProductoDetalleId] = useState(null);
-  const [pedidoDetalleCodigo, setPedidoDetalleCodigo] = useState(null);
+  const [pedidoDetalleCodigo, setPedidoDetalleCodigo] = useState(
+    PEDIDOS_INICIALES_V2[0]?.codigo || null
+  );
 
-  // Estados de filtros y búsqueda en Catálogo (HU04, HU05, HU06)
+  // Filtros en Catálogo (HU04, HU05, HU06, HU23)
   const [busqueda, setBusqueda] = useState('');
   const [categoriaSeleccionada, setCategoriaSeleccionada] = useState('Todas');
-  const [ordenPrecio, setOrdenPrecio] = useState('ninguno'); // 'ninguno' | 'asc' | 'desc'
+  const [ordenPrecio, setOrdenPrecio] = useState('ninguno');
+  const [marcaSeleccionada, setMarcaSeleccionada] = useState('Todas');
+  const [precioMinInput, setPrecioMinInput] = useState('');
+  const [precioMaxInput, setPrecioMaxInput] = useState('');
+  const [rangoPrecioAplicado, setRangoPrecioAplicado] = useState({ min: null, max: null });
+  const [soloDisponibles, setSoloDisponibles] = useState(false);
+  const [errorFiltroPrecio, setErrorFiltroPrecio] = useState('');
 
-  // Estados del Carrito, Cupón (HU17) y Formulario del Comprador (HU12, HU13)
+  // Detalle: Variante (HU21), Pregunta (HU24), Compartir (HU35) y Reseña (HU19)
+  const [varianteSeleccionadaId, setVarianteSeleccionadaId] = useState(null);
+  const [cantidadDetalle, setCantidadDetalle] = useState(1);
+  const [preguntaInput, setPreguntaInput] = useState('');
+  const [textoCompartirVisible, setTextoCompartirVisible] = useState('');
+  const [resenaEstrellasInput, setResenaEstrellasInput] = useState('5');
+  const [resenaAutorInput, setResenaAutorInput] = useState('');
+  const [resenaComentarioInput, setResenaComentarioInput] = useState('');
+
+  // Carrito, Cupón y Checkout (HU12, HU13, HU17, HU25, HU26)
   const [codigoCuponInput, setCodigoCuponInput] = useState('');
   const [cuponAplicado, setCuponAplicado] = useState(null);
-  const [compradorNombre, setCompradorNombre] = useState('');
-  const [compradorTelefono, setCompradorTelefono] = useState('');
-  const [compradorMunicipio, setCompradorMunicipio] = useState('');
-  const [compradorDireccion, setCompradorDireccion] = useState('');
+  const [compradorNombre, setCompradorNombre] = useState('Operador Demo 117');
+  const [compradorTelefono, setCompradorTelefono] = useState('3000000117');
   const [resumenRevisado, setResumenRevisado] = useState(false);
   const [ultimoPedidoConfirmado, setUltimoPedidoConfirmado] = useState(null);
 
-  // Estados del Panel de Vendedor (HU18)
+  // Posventa: Cancelación inline (HU28), Devolución (HU34) y Soporte preseleccionado (HU32)
+  const [pedidoConfirmandoCancelacion, setPedidoConfirmandoCancelacion] = useState(null);
+  const [pedidoDevolucionId, setPedidoDevolucionId] = useState(null);
+  const [motivoDevolucionInput, setMotivoDevolucionInput] = useState('');
+  const [pedidoSoportePreseleccionado, setPedidoSoportePreseleccionado] = useState('');
+
+  // Panel de Vendedor (HU18)
   const [editandoId, setEditandoId] = useState(null);
   const [vendNombre, setVendNombre] = useState('');
+  const [vendMarca, setVendMarca] = useState('Materials Group UNSC');
   const [vendCategoria, setVendCategoria] = useState(MARCA_INFO.categorias[0]);
   const [vendPrecio, setVendPrecio] = useState('');
   const [vendStock, setVendStock] = useState('');
@@ -73,32 +154,25 @@ export default function App() {
   const [vendInsignia, setVendInsignia] = useState('');
   const [vendImagenUrl, setVendImagenUrl] = useState('');
 
-  // Estados de Reseñas Ficticias en Detalle del Producto (HU19)
-  const [resenaEstrellasInput, setResenaEstrellasInput] = useState('5');
-  const [resenaAutorInput, setResenaAutorInput] = useState('');
-  const [resenaComentarioInput, setResenaComentarioInput] = useState('');
-
-  // Estado de Retroalimentación / Alertas Tácticas (HU16)
+  // Banner de retroalimentación (HU16)
   const [retroalimentacion, setRetroalimentacion] = useState({
     visible: true,
-    tipo: 'info', // 'exito' | 'error' | 'alerta' | 'info'
-    titulo: 'SISTEMA TÁCTICO UNSC EN LÍNEA',
+    tipo: 'info',
+    titulo: 'MARKET MJOLNIR 2.0 EN LÍNEA',
     mensaje:
-      'Bienvenido a Market Mjolnir. Explora armaduras Mjolnir, naves, armas y vehículos terrestres con renders oficiales de Halo.',
+      'Versión 2.0 activa: variantes, comparador, filtros combinados, preguntas, direcciones, envío por municipio, seguimiento, cancelación, avisos y soporte.',
   });
 
-  // Función auxiliar para mostrar mensajes claros al usuario (HU16)
+  const tema = modoOscuro ? TEMAS_APP.oscuro : TEMAS_APP.claro;
+  const escala = letraGrande ? 1.18 : 1;
+  const fs = (n) => Math.round(n * escala);
+
   const notificar = (tipo, titulo, mensaje) => {
-    setRetroalimentacion({
-      visible: true,
-      tipo,
-      titulo,
-      mensaje,
-    });
+    setRetroalimentacion({ visible: true, tipo, titulo, mensaje });
   };
 
   // ==========================================================================
-  // 2. PERSISTENCIA LOCAL SEGURA (HU20: CA01, CA02, CA03)
+  // 2. PERSISTENCIA LOCAL SEGURA (HU20 + v2)
   // ==========================================================================
   useEffect(() => {
     let activo = true;
@@ -108,13 +182,28 @@ export default function App() {
         setProductos(recuperado.productos);
         setCarrito(recuperado.carrito);
         setFavoritos(recuperado.favoritos);
-        setHistorialPedidos(recuperado.historialPedidos);
+        if (recuperado.historialPedidos) {
+          setHistorialPedidos(recuperado.historialPedidos);
+        }
         setCuponAplicado(recuperado.cuponAplicado);
-        notificar(
-          'info',
-          'SESIÓN TÁCTICA RESTAURADA (HU20)',
-          'Se recuperaron tu carrito, favoritos, inventario e historial local de forma segura.'
-        );
+        setComparacion(recuperado.comparacion || []);
+        if (recuperado.direcciones) {
+          setDirecciones(recuperado.direcciones);
+        }
+        if (recuperado.direccionSeleccionadaId !== undefined) {
+          setDireccionSeleccionadaId(recuperado.direccionSeleccionadaId);
+        }
+        if (recuperado.modalidadEnvio !== undefined) {
+          setModalidadEnvio(recuperado.modalidadEnvio);
+        }
+        if (recuperado.consultas) {
+          setConsultas(recuperado.consultas);
+        }
+        setNotificaciones(recuperado.notificaciones || []);
+        setSuscripcionesReposicion(recuperado.suscripcionesReposicion || []);
+        setTicketsSoporte(recuperado.ticketsSoporte || []);
+        setModoOscuro(recuperado.modoOscuro);
+        setLetraGrande(recuperado.letraGrande);
       }
       if (activo) {
         setHidratado(true);
@@ -134,11 +223,38 @@ export default function App() {
       favoritos,
       historialPedidos,
       cuponAplicado,
+      comparacion,
+      direcciones,
+      direccionSeleccionadaId,
+      modalidadEnvio,
+      consultas,
+      notificaciones,
+      suscripcionesReposicion,
+      ticketsSoporte,
+      modoOscuro,
+      letraGrande,
     });
-  }, [productos, carrito, favoritos, historialPedidos, cuponAplicado, hidratado]);
+  }, [
+    productos,
+    carrito,
+    favoritos,
+    historialPedidos,
+    cuponAplicado,
+    comparacion,
+    direcciones,
+    direccionSeleccionadaId,
+    modalidadEnvio,
+    consultas,
+    notificaciones,
+    suscripcionesReposicion,
+    ticketsSoporte,
+    modoOscuro,
+    letraGrande,
+    hidratado,
+  ]);
 
   // ==========================================================================
-  // 3. FUNCIONES DE NAVEGACIÓN (HU02, HU07)
+  // 3. NAVEGACIÓN (HU02, HU07)
   // ==========================================================================
   const irAVista = (nuevaVista) => {
     if (nuevaVista !== 'detalle') {
@@ -151,7 +267,19 @@ export default function App() {
     if (vistaActual !== 'detalle') {
       setVistaAnterior(vistaActual);
     }
+    const prod = productos.find((p) => p.id === productoId);
     setProductoDetalleId(productoId);
+    // HU21: Si tiene múltiples variantes, exige selección explícita (null); si tiene 1, la preselecciona
+    if (prod && tieneMultiplesVariantes(prod)) {
+      setVarianteSeleccionadaId(null);
+    } else if (prod && Array.isArray(prod.variantes) && prod.variantes.length === 1) {
+      setVarianteSeleccionadaId(prod.variantes[0].id);
+    } else {
+      setVarianteSeleccionadaId(null);
+    }
+    setCantidadDetalle(1);
+    setPreguntaInput('');
+    setTextoCompartirVisible('');
     setResenaEstrellasInput('5');
     setResenaAutorInput('');
     setResenaComentarioInput('');
@@ -165,82 +293,126 @@ export default function App() {
   };
 
   // ==========================================================================
-  // 4. FAVORITOS (HU08: CA01, CA02, CA03)
+  // 4. FAVORITOS (HU08) Y COMPARADOR (HU22)
   // ==========================================================================
   const alternarFavorito = (producto) => {
     const yaEsFavorito = favoritos.includes(producto.id);
     if (yaEsFavorito) {
       setFavoritos((prev) => prev.filter((id) => id !== producto.id));
-      notificar(
-        'info',
-        'FAVORITO REMOVIDO',
-        `Se quitó "${producto.nombre}" de tu lista de favoritos.`
-      );
+      notificar('info', 'FAVORITO REMOVIDO', `Se quitó "${producto.nombre}" de favoritos.`);
     } else {
       setFavoritos((prev) => [...prev, producto.id]);
-      notificar(
-        'exito',
-        'GUARDADO EN FAVORITOS ★',
-        `"${producto.nombre}" quedó registrado en tus suministros favoritos.`
-      );
+      notificar('exito', 'GUARDADO EN FAVORITOS ★', `"${producto.nombre}" guardado en favoritos.`);
     }
   };
 
+  const manejarToggleComparar = (producto) => {
+    const res = toggleComparacion(comparacion, producto.id, REGLAS_V2.MAX_COMPARACION);
+    setComparacion(res.lista);
+    if (!res.ok) {
+      notificar('alerta', 'LÍMITE DEL COMPARADOR (HU22)', res.mensaje);
+      return;
+    }
+    notificar(res.accion === 'agregado' ? 'exito' : 'info', 'COMPARADOR (HU22)', res.mensaje);
+  };
+
   // ==========================================================================
-  // 5. CARRITO DE COMPRAS: AGREGAR, CANTIDADES Y ELIMINAR (HU09, HU10)
+  // 5. CARRITO CON VARIANTES (HU09, HU10, HU21)
   // ==========================================================================
-  const obtenerCantidadEnCarrito = (productoId) => {
-    const encontrado = carrito.find((item) => item.id === productoId);
+  const obtenerUnidadesProductoEnCarrito = (productoId) =>
+    carrito
+      .filter((item) => (item.productoId || item.id) === productoId)
+      .reduce((acc, item) => acc + item.cantidad, 0);
+
+  const obtenerUnidadesVarianteEnCarrito = (productoId, varianteId) => {
+    const clave = construirClaveCarrito(productoId, varianteId);
+    const encontrado = carrito.find((item) => item.claveCarrito === clave);
     return encontrado ? encontrado.cantidad : 0;
   };
 
-  const agregarAlCarrito = (producto) => {
-    const productoActual =
-      productos.find((p) => p.id === producto.id) || producto;
+  const agregarAlCarritoConVariante = (producto, varianteIdExplicito = null, cantidadSolicitada = 1) => {
+    const productoActual = productos.find((p) => p.id === producto.id) || producto;
+    const stockGlobal = obtenerStockProducto(productoActual);
 
-    // HU09-CA03: Producto agotado no puede agregarse y el carrito no cambia
-    if (productoActual.stock <= 0) {
-      notificar(
-        'error',
-        'SUMINISTRO AGOTADO (STOCK 0)',
-        `No es posible agregar "${productoActual.nombre}" porque no tiene existencias disponibles. El carrito no ha cambiado.`
-      );
-      return;
-    }
-
-    const cantidadActual = obtenerCantidadEnCarrito(productoActual.id);
-
-    // HU09-CA02: Impedir superar el stock disponible con advertencia
-    if (cantidadActual >= productoActual.stock) {
+    // Si tiene múltiples variantes y no se eligió una (HU21-CA02)
+    if (tieneMultiplesVariantes(productoActual) && !varianteIdExplicito) {
       notificar(
         'alerta',
-        'LÍMITE DE STOCK ALCANZADO',
-        `Ya tienes ${cantidadActual} unidad(es) de "${productoActual.nombre}" en el carrito (máximo stock disponible: ${productoActual.stock}).`
+        'SELECCIONA UNA VARIANTE (HU21-CA02)',
+        `"${productoActual.nombre}" tiene varias opciones. Selecciona una variante antes de agregar al carrito.`
       );
       return;
     }
 
-    // HU09-CA01: Crear línea con cantidad 1 o aumentar cantidad existente de forma inmutable
-    setCarrito((prevCarrito) => {
-      const existe = prevCarrito.find((item) => item.id === productoActual.id);
+    const varianteObj = obtenerVarianteProducto(productoActual, varianteIdExplicito);
+    if (!varianteObj) {
+      notificar(
+        'alerta',
+        'VARIANTE REQUERIDA (HU21)',
+        'Elige una variante válida antes de agregar al carrito.'
+      );
+      return;
+    }
+
+    if (stockGlobal <= 0 || varianteObj.stock <= 0) {
+      notificar(
+        'error',
+        'VARIANTE SIN STOCK (HU21)',
+        `La variante "${varianteObj.etiqueta}" de "${productoActual.nombre}" está agotada (Stock: 0). El carrito no cambió.`
+      );
+      return;
+    }
+
+    const yaEnCarrito = obtenerUnidadesVarianteEnCarrito(productoActual.id, varianteObj.id);
+    const maximoPermitido = Math.max(0, varianteObj.stock - yaEnCarrito);
+
+    if (maximoPermitido <= 0) {
+      notificar(
+        'alerta',
+        'STOCK MÁXIMO ALCANZADO (HU21-CA04)',
+        `Ya tienes las ${varianteObj.stock} unidad(es) disponibles de "${varianteObj.etiqueta}" en el carrito.`
+      );
+      return;
+    }
+
+    if (cantidadSolicitada > maximoPermitido) {
+      notificar(
+        'error',
+        'CANTIDAD SUPERA EL STOCK DISPONIBLE (HU21-CA04)',
+        `Solicitaste ${cantidadSolicitada} uds., pero el máximo permitido para agregar de "${varianteObj.etiqueta}" es ${maximoPermitido} ud(s).`
+      );
+      return;
+    }
+
+    const clave = construirClaveCarrito(productoActual.id, varianteObj.id);
+    setCarrito((prev) => {
+      const existe = prev.find((it) => it.claveCarrito === clave);
       if (existe) {
-        return prevCarrito.map((item) =>
-          item.id === productoActual.id
-            ? { ...item, cantidad: item.cantidad + 1, precio: productoActual.precio }
-            : item
+        return prev.map((it) =>
+          it.claveCarrito === clave
+            ? {
+                ...it,
+                cantidad: it.cantidad + cantidadSolicitada,
+                precio: varianteObj.precio,
+              }
+            : it
         );
       }
       return [
-        ...prevCarrito,
+        ...prev,
         {
+          claveCarrito: clave,
           id: productoActual.id,
+          productoId: productoActual.id,
+          varianteId: varianteObj.id,
+          varianteEtiqueta: varianteObj.etiqueta,
           nombre: productoActual.nombre,
           categoria: productoActual.categoria,
-          precio: productoActual.precio,
+          marca: productoActual.marca,
+          precio: varianteObj.precio,
           icono: productoActual.icono || '📦',
-          insignia: productoActual.insignia || productoActual.id,
           imagenPersonalizada: productoActual.imagenPersonalizada || null,
-          cantidad: 1,
+          cantidad: cantidadSolicitada,
         },
       ];
     });
@@ -248,87 +420,70 @@ export default function App() {
     setUltimoPedidoConfirmado(null);
     notificar(
       'exito',
-      'SUMINISTRO AGREGADO AL CARRITO',
-      `"${productoActual.nombre}" en carrito (${cantidadActual + 1} de ${productoActual.stock} disponibles).`
+      'AGREGADO AL CARRITO (HU21-CA03)',
+      `${cantidadSolicitada} × "${productoActual.nombre}" [${varianteObj.etiqueta}] (${formatearCOP(
+        varianteObj.precio
+      )} COP).`
     );
   };
 
-  const aumentarCantidadCarrito = (productoId) => {
-    const productoCatalogo = productos.find((p) => p.id === productoId);
-    const itemCarrito = carrito.find((i) => i.id === productoId);
-    if (!productoCatalogo || !itemCarrito) return;
+  const aumentarCantidadCarrito = (claveCarrito) => {
+    const itemCarrito = carrito.find((i) => i.claveCarrito === claveCarrito);
+    if (!itemCarrito) return;
+    const prodCatalogo = productos.find((p) => p.id === (itemCarrito.productoId || itemCarrito.id));
+    const varCatalogo = obtenerVarianteProducto(prodCatalogo, itemCarrito.varianteId);
+    const stockMax = varCatalogo ? varCatalogo.stock : 0;
 
-    // HU10-CA01: Pasa a +1 solo si existe stock suficiente
-    if (itemCarrito.cantidad >= productoCatalogo.stock) {
+    if (itemCarrito.cantidad >= stockMax) {
       notificar(
         'alerta',
-        'STOCK MÁXIMO EN CARRITO',
-        `No puedes agregar más unidades de "${itemCarrito.nombre}". Stock máximo disponible: ${productoCatalogo.stock}.`
+        'STOCK MÁXIMO DE VARIANTE',
+        `No puedes superar ${stockMax} ud(s). para "${itemCarrito.nombre} (${itemCarrito.varianteEtiqueta})".`
       );
       return;
     }
 
     setCarrito((prev) =>
       prev.map((item) =>
-        item.id === productoId
+        item.claveCarrito === claveCarrito
           ? { ...item, cantidad: item.cantidad + 1 }
           : item
       )
     );
-    notificar(
-      'info',
-      'CANTIDAD ACTUALIZADA',
-      `"${itemCarrito.nombre}" aumentó a ${itemCarrito.cantidad + 1} unidades.`
-    );
   };
 
-  const disminuirCantidadCarrito = (productoId) => {
-    const itemCarrito = carrito.find((i) => i.id === productoId);
+  const disminuirCantidadCarrito = (claveCarrito) => {
+    const itemCarrito = carrito.find((i) => i.claveCarrito === claveCarrito);
     if (!itemCarrito) return;
 
-    // HU10-CA04: Si tiene cantidad 1 e intenta disminuir a 0, exige usar Eliminar sin números negativos
     if (itemCarrito.cantidad <= 1) {
       notificar(
         'alerta',
         'CANTIDAD MÍNIMA (1 UNIDAD)',
-        `La cantidad mínima es 1. Para retirar "${itemCarrito.nombre}" del carrito, presiona el botón "Eliminar".`
+        `Para quitar "${itemCarrito.nombre} (${itemCarrito.varianteEtiqueta})", usa el botón Eliminar.`
       );
       return;
     }
 
-    // HU10-CA02: Si cantidad > 1, baja una unidad y actualiza subtotal
     setCarrito((prev) =>
       prev.map((item) =>
-        item.id === productoId
+        item.claveCarrito === claveCarrito
           ? { ...item, cantidad: item.cantidad - 1 }
           : item
       )
     );
-    notificar(
-      'info',
-      'CANTIDAD ACTUALIZADA',
-      `"${itemCarrito.nombre}" disminuyó a ${itemCarrito.cantidad - 1} unidad(es).`
-    );
   };
 
-  const eliminarDelCarrito = (productoId) => {
-    const itemCarrito = carrito.find((i) => i.id === productoId);
-    // HU10-CA03: Desaparece del carrito y se recalculan sus valores
+  const eliminarDelCarrito = (claveCarrito) => {
     setCarrito((prev) => {
-      const nuevo = prev.filter((item) => item.id !== productoId);
+      const nuevo = prev.filter((item) => item.claveCarrito !== claveCarrito);
       if (nuevo.length === 0) {
         setCuponAplicado(null);
         setResumenRevisado(false);
       }
       return nuevo;
     });
-    if (itemCarrito) {
-      notificar(
-        'info',
-        'REFERENCIA ELIMINADA',
-        `Se eliminó "${itemCarrito.nombre}" del carrito y se recalcularon los totales.`
-      );
-    }
+    notificar('info', 'LÍNEA ELIMINADA', 'Se retiró la variante del carrito y se recalculó el total.');
   };
 
   const vaciarCarritoCompleto = () => {
@@ -339,152 +494,172 @@ export default function App() {
   };
 
   // ==========================================================================
-  // 6. CUPÓN PROMOCIONAL (HU17: CA01, CA02, CA03)
+  // 6. CUPÓN, DIRECCIONES (HU25), ENVÍO (HU26) Y COMPRA SIMULADA (HU13, HU29)
   // ==========================================================================
+  const direccionActiva =
+    direcciones.find((d) => d.id === direccionSeleccionadaId) || null;
+
+  const envioCalculado = calcularEnvioV2(direccionActiva, modalidadEnvio);
+  const resumenCarrito = calcularResumenCarritoV2(carrito, cuponAplicado, envioCalculado);
+
   const aplicarCupon = () => {
     if (carrito.length === 0) {
-      notificar(
-        'alerta',
-        'CARRITO VACÍO',
-        'Agrega al menos un suministro al carrito antes de aplicar un cupón promocional.'
-      );
+      notificar('alerta', 'CARRITO VACÍO', 'Agrega productos antes de aplicar un cupón.');
       return;
     }
-
     const limpio = codigoCuponInput.trim().toUpperCase();
-    if (!limpio) {
-      notificar(
-        'error',
-        'CÓDIGO VACÍO',
-        'Escribe un código promocional (ejemplo: BIENVENIDO10) para validarlo.'
-      );
-      return;
-    }
-
-    // HU17-CA01: BIENVENIDO10 descuenta el 10% del subtotal
     if (limpio === MARCA_INFO.cuponValido.codigo) {
       setCuponAplicado(MARCA_INFO.cuponValido.codigo);
-      notificar(
-        'exito',
-        'CUPÓN BIENVENIDO10 APLICADO (-10%)',
-        'Se aplicó un descuento táctico del 10% sobre el subtotal de tu carrito.'
-      );
+      notificar('exito', 'CUPÓN BIENVENIDO10 (-10%)', 'Descuento del 10% aplicado al subtotal.');
     } else {
-      // HU17-CA02: Código desconocido se rechaza sin modificar el total
-      notificar(
-        'error',
-        'CUPÓN RECHAZADO',
-        `El código "${limpio}" no es válido en el sistema UNSC. El total no fue modificado. Prueba con BIENVENIDO10.`
-      );
+      notificar('error', 'CUPÓN RECHAZADO', `El código "${limpio}" no es válido. Usa BIENVENIDO10.`);
     }
   };
 
   const quitarCupon = () => {
     setCuponAplicado(null);
     setCodigoCuponInput('');
-    notificar('info', 'CUPÓN REMOVIDO', 'Se quitó el cupón promocional y se recalculó el total.');
+    notificar('info', 'CUPÓN REMOVIDO', 'Se quitó el cupón y se recalculó el total.');
   };
 
-  // ==========================================================================
-  // 7. VALIDAR DATOS DEL COMPRADOR Y CONFIRMAR COMPRA SIMULADA (HU12, HU13, HU14)
-  // ==========================================================================
-  const revisarDatosYResumen = () => {
+  const manejarGuardarDireccion = (datos, editId) => {
+    const res = guardarDireccionEnLista(direcciones, datos, editId);
+    if (!res.ok) {
+      notificar('error', 'VALIDACIÓN DE DIRECCIÓN (HU25)', res.mensaje);
+      return false;
+    }
+    setDirecciones(res.direcciones);
+    if (res.guardada) {
+      setDireccionSeleccionadaId(res.guardada.id);
+    }
+    setResumenRevisado(false);
+    notificar('exito', 'LIBRETA DE DIRECCIONES (HU25)', res.mensaje);
+    return true;
+  };
+
+  const manejarMarcarPrincipal = (dirId) => {
+    setDirecciones((prev) => marcarDireccionPrincipal(prev, dirId));
+    notificar('exito', 'DIRECCIÓN PRINCIPAL ACTUALIZADA', 'Solo una dirección queda marcada como principal.');
+  };
+
+  const manejarSeleccionarDireccion = (dirId) => {
+    setDireccionSeleccionadaId(dirId);
+    setResumenRevisado(false);
+    notificar('info', 'DIRECCIÓN SELECCIONADA', 'Envío y total recalculados sin duplicar cargos.');
+  };
+
+  const manejarEliminarDireccion = (dirId) => {
+    setDirecciones((prev) => {
+      const filtrada = prev.filter((d) => d.id !== dirId);
+      if (filtrada.length > 0 && !filtrada.some((d) => d.principal)) {
+        filtrada[0] = { ...filtrada[0], principal: true };
+      }
+      if (direccionSeleccionadaId === dirId) {
+        setDireccionSeleccionadaId(filtrada[0]?.id || null);
+      }
+      return filtrada;
+    });
+    notificar('info', 'DIRECCIÓN ELIMINADA', 'Se actualizó tu libreta de direcciones.');
+  };
+
+  const validarCheckoutPrevio = () => {
     if (carrito.length === 0) {
+      notificar('error', 'CARRITO VACÍO', 'Agrega artículos antes de continuar.');
+      return false;
+    }
+    if (!direccionActiva) {
       notificar(
         'error',
-        'CARRITO VACÍO',
-        'No puedes finalizar la compra porque el carrito está vacío.'
+        'DIRECCIÓN OBLIGATORIA (HU25-CA04)',
+        'Debes seleccionar o registrar una dirección ficticia antes de confirmar el pedido.'
       );
       return false;
     }
-
-    // HU12-CA02: Validar que ningún campo obligatorio esté vacío o solo con espacios
-    const validacion = validarFormularioComprador({
-      nombre: compradorNombre,
-      telefono: compradorTelefono,
-      municipio: compradorMunicipio,
-      direccion: compradorDireccion,
-    });
-
-    if (!validacion.valido) {
-      setResumenRevisado(false);
-      notificar('error', 'DATOS DE ENTREGA INCOMPLETOS (HU12)', validacion.mensaje);
+    if (!modalidadEnvio) {
+      notificar(
+        'error',
+        'MODALIDAD DE ENVÍO FALTANTE (HU26-CA04)',
+        'Elige una modalidad de envío (Estándar o Exprés) para continuar.'
+      );
       return false;
     }
+    if (!envioCalculado.disponible) {
+      notificar(
+        'alerta',
+        'ENVÍO REQUIERE AJUSTE MANUAL (HU26)',
+        envioCalculado.mensaje
+      );
+      return false;
+    }
+    if (!compradorNombre.trim() || !compradorTelefono.trim()) {
+      notificar(
+        'error',
+        'DATOS BÁSICOS FALTANTES (HU12)',
+        'Ingresa un nombre y teléfono ficticio del comprador.'
+      );
+      return false;
+    }
+    return true;
+  };
 
-    // HU12-CA03: Permite revisar el resumen antes de confirmar
+  const revisarDatosYResumen = () => {
+    if (!validarCheckoutPrevio()) {
+      setResumenRevisado(false);
+      return false;
+    }
     setResumenRevisado(true);
     notificar(
       'exito',
-      'RESUMEN LISTO PARA CONFIRMAR (HU12-CA03)',
-      'Datos de entrega verificados. Revisa el resumen táctico y presiona "Confirmar compra simulada".'
+      'RESUMEN VERIFICADO',
+      `Dirección en ${direccionActiva.municipio} y envío calculado (${formatearCOP(
+        resumenCarrito.envio
+      )} COP). Listo para confirmar.`
     );
     return true;
   };
 
   const confirmarCompraSimulada = () => {
-    if (carrito.length === 0) {
-      notificar(
-        'error',
-        'SIN ARTÍCULOS EN EL CARRITO',
-        'Agrega productos válidos al carrito antes de confirmar un pedido.'
-      );
-      return;
-    }
+    if (!validarCheckoutPrevio()) return;
 
-    // 1. Verificar datos obligatorios del comprador (HU12-CA01, CA02)
-    const validacionComprador = validarFormularioComprador({
-      nombre: compradorNombre,
-      telefono: compradorTelefono,
-      municipio: compradorMunicipio,
-      direccion: compradorDireccion,
-    });
-
-    if (!validacionComprador.valido) {
-      notificar('error', 'VALIDACIÓN DE COMPRADOR FALLIDA', validacionComprador.mensaje);
-      return;
-    }
-
-    // 2. HU13-CA02: Verificar atómicamente que TODOS los artículos tengan stock suficiente
+    // Verificación atómica de stock por variante
     for (let i = 0; i < carrito.length; i += 1) {
       const item = carrito[i];
-      const prodEnCatalogo = productos.find((p) => p.id === item.id);
-      if (!prodEnCatalogo || prodEnCatalogo.stock < item.cantidad) {
-        const stockActual = prodEnCatalogo ? prodEnCatalogo.stock : 0;
+      const prod = productos.find((p) => p.id === (item.productoId || item.id));
+      const variante = obtenerVarianteProducto(prod, item.varianteId);
+      const stockDisponible = variante ? variante.stock : 0;
+      if (!prod || !variante || stockDisponible < item.cantidad) {
         notificar(
           'error',
-          'OPERACIÓN CANCELADA POR STOCK INSUFICIENTE (HU13-CA02)',
-          `El artículo "${item.nombre}" solicita ${item.cantidad} uds., pero solo hay ${stockActual} en inventario. No se descontó ningún producto.`
+          'STOCK INSUFICIENTE POR VARIANTE',
+          `"${item.nombre} (${item.varianteEtiqueta})" solicita ${item.cantidad} uds., pero solo hay ${stockDisponible}.`
         );
         return;
       }
     }
 
-    // 3. Calcular valores finales inmutables (HU11, HU17)
-    const resumenFinal = calcularResumenCarrito(carrito, cuponAplicado);
-
-    // 4. Generar código único de pedido (HU13-CA01)
     const consecutivo = String(historialPedidos.length + 1).padStart(3, '0');
     const sufijo = Math.floor(1000 + Math.random() * 9000);
     const codigoUnico = `UNSC-2552-${consecutivo}-${sufijo}`;
-    const ahora = new Date();
-    const fechaHora = `${ahora.toLocaleDateString('es-CO')} · ${ahora.toLocaleTimeString('es-CO', {
-      hour: '2-digit',
-      minute: '2-digit',
-    })}`;
+    const fecha = formatearFechaHoraActual();
 
-    // 5. Crear copia profunda e inmutable del pedido para el historial (HU15-CA03)
+    // Snapshot inmutable del pedido (precios, variantes y envío congelados)
     const nuevoPedido = {
       codigo: codigoUnico,
-      fechaHora,
+      fechaHora: fecha,
       comprador: {
         nombre: compradorNombre.trim(),
         telefono: compradorTelefono.trim(),
-        municipio: compradorMunicipio.trim(),
-        direccion: compradorDireccion.trim(),
+        municipio: direccionActiva.municipio,
+        direccion: `${direccionActiva.alias} · ${direccionActiva.descripcion}`,
       },
+      direccion: { ...direccionActiva },
+      modalidadEnvio,
+      plazoEnvio: resumenCarrito.plazoEnvio,
       articulos: carrito.map((item) => ({
-        id: item.id,
+        id: item.productoId || item.id,
+        productoId: item.productoId || item.id,
+        varianteId: item.varianteId,
+        varianteEtiqueta: item.varianteEtiqueta,
         nombre: item.nombre,
         categoria: item.categoria,
         icono: item.icono,
@@ -493,28 +668,28 @@ export default function App() {
         precioUnitario: item.precio,
         subtotalLinea: item.cantidad * item.precio,
       })),
-      subtotal: resumenFinal.subtotal,
+      subtotal: resumenCarrito.subtotal,
       cuponAplicado,
-      descuento: resumenFinal.descuento,
-      envio: resumenFinal.envio,
-      total: resumenFinal.total,
+      descuento: resumenCarrito.descuento,
+      envio: resumenCarrito.envio,
+      total: resumenCarrito.total,
+      estado: 'Confirmado',
+      stockRestituido: false,
+      devolucionSolicitada: false,
+      motivoDevolucion: '',
+      historialEstados: [
+        {
+          estado: 'Confirmado',
+          fecha,
+          detalle: 'Compra simulada confirmada e inventario por variante descontado.',
+        },
+      ],
       notaSimulacion:
-        'SIMULACIÓN ACADÉMICA LOCAL: Este pedido no genera cobro real ni conexión con pasarelas bancarias.',
+        'SIMULACIÓN ACADÉMICA LOCAL: Pedido registrado con precios congelados, sin cobro real.',
     };
 
-    // 6. HU14-CA01 y CA03: Descontar existencias en el catálogo sin dejar stock negativo
-    setProductos((prevProductos) =>
-      prevProductos.map((prod) => {
-        const itemComprado = carrito.find((c) => c.id === prod.id);
-        if (!itemComprado) return prod;
-        return {
-          ...prod,
-          stock: Math.max(0, prod.stock - itemComprado.cantidad),
-        };
-      })
-    );
-
-    // 7. Guardar en historial y vaciar carrito (HU13-CA03, HU15-CA01)
+    // Descontar unidades en variantes y recalcular stock total
+    setProductos((prev) => descontarStockPorItems(prev, nuevoPedido.articulos));
     setHistorialPedidos((prev) => [nuevoPedido, ...prev]);
     setUltimoPedidoConfirmado(nuevoPedido);
     setPedidoDetalleCodigo(nuevoPedido.codigo);
@@ -523,19 +698,235 @@ export default function App() {
     setCodigoCuponInput('');
     setResumenRevisado(false);
 
+    // HU29: Generar notificación interna sin duplicados
+    setNotificaciones((prev) =>
+      agregarNotificacionUnica(prev, {
+        claveEvento: `PEDIDO-${codigoUnico}-Confirmado`,
+        tipo: 'pedido',
+        referenciaId: codigoUnico,
+        fecha,
+        mensaje: `Pedido ${codigoUnico} creado en estado "Confirmado" (${formatearCOP(
+          nuevoPedido.total
+        )} COP).`,
+      }).lista
+    );
+
     notificar(
       'exito',
-      `¡PEDIDO ${codigoUnico} CONFIRMADO! (SIMULACIÓN)`,
-      `Compra simulada registrada por ${formatearCOP(resumenFinal.total)} COP. El inventario fue descontado y el carrito quedó vacío.`
+      `¡PEDIDO ${codigoUnico} CONFIRMADO!`,
+      `Compra simulada por ${formatearCOP(
+        nuevoPedido.total
+      )} COP. Se descontó el stock por variante y se generó el aviso interno.`
     );
   };
 
   // ==========================================================================
-  // 8. PANEL DE VENDEDOR: CREAR Y EDITAR PRODUCTOS (HU18: CA01, CA02, CA03)
+  // 7. POSVENTA: SEGUIMIENTO (HU27), CANCELACIÓN (HU28), REPOSICIÓN (HU30),
+  //    PREGUNTAS (HU24), SOPORTE (HU32), DEVOLUCIÓN (HU34) Y COMPARTIR (HU35)
+  // ==========================================================================
+  const manejarAvanzarEstadoPedido = (codigo) => {
+    const objetivo = historialPedidos.find((p) => p.codigo === codigo);
+    if (!objetivo) return;
+    const res = avanzarEstadoPedido(objetivo, formatearFechaHoraActual());
+    if (!res.ok) {
+      notificar('alerta', 'TRANSICIÓN BLOQUEADA (HU27)', res.mensaje);
+      return;
+    }
+
+    setHistorialPedidos((prev) =>
+      prev.map((p) => (p.codigo === codigo ? res.pedido : p))
+    );
+
+    setNotificaciones((prev) =>
+      agregarNotificacionUnica(prev, {
+        claveEvento: `PEDIDO-${codigo}-${res.nuevoEstado}`,
+        tipo: 'pedido',
+        referenciaId: codigo,
+        mensaje: `Tu pedido ${codigo} pasó al estado "${res.nuevoEstado}" (simulación de entrega).`,
+      }).lista
+    );
+
+    notificar('exito', 'AVANCE SIMULADO (HU27)', res.mensaje);
+  };
+
+  const manejarConfirmarCancelacion = (codigo) => {
+    const objetivo = historialPedidos.find((p) => p.codigo === codigo);
+    const res = cancelarPedidoControlado(objetivo, productos, formatearFechaHoraActual());
+    setPedidoConfirmandoCancelacion(null);
+
+    if (!res.ok) {
+      notificar('error', 'CANCELACIÓN NO PERMITIDA (HU28)', res.mensaje);
+      return;
+    }
+
+    setProductos(res.productos);
+    setHistorialPedidos((prev) =>
+      prev.map((p) => (p.codigo === codigo ? res.pedido : p))
+    );
+
+    setNotificaciones((prev) =>
+      agregarNotificacionUnica(prev, {
+        claveEvento: `PEDIDO-${codigo}-Cancelado`,
+        tipo: 'cancelacion',
+        referenciaId: codigo,
+        mensaje: `El pedido ${codigo} fue cancelado lógicamente y sus unidades fueron restituidas al inventario.`,
+      }).lista
+    );
+
+    notificar('exito', 'PEDIDO CANCELADO (HU28)', res.mensaje);
+  };
+
+  const manejarSolicitarDevolucion = (codigo) => {
+    const objetivo = historialPedidos.find((p) => p.codigo === codigo);
+    const res = solicitarDevolucionPedido(
+      objetivo,
+      motivoDevolucionInput,
+      formatearFechaHoraActual()
+    );
+    if (!res.ok) {
+      notificar('alerta', 'DEVOLUCIÓN NO PERMITIDA (HU34)', res.mensaje);
+      return;
+    }
+
+    setHistorialPedidos((prev) =>
+      prev.map((p) => (p.codigo === codigo ? res.pedido : p))
+    );
+    setPedidoDevolucionId(null);
+    setMotivoDevolucionInput('');
+    notificar('exito', 'DEVOLUCIÓN SIMULADA REGISTRADA (HU34)', res.mensaje);
+  };
+
+  const manejarEnviarPregunta = (productoId) => {
+    const valid = validarPreguntaProducto(preguntaInput);
+    if (!valid.valido) {
+      notificar('error', 'PREGUNTA INVÁLIDA (HU24-CA03)', valid.mensaje);
+      return;
+    }
+    const nueva = {
+      id: `CONS-${Date.now()}`,
+      productoId,
+      pregunta: valid.textoLimpio,
+      estado: 'Pendiente',
+      respuestaSimulada: '',
+      fecha: formatearFechaHoraActual(),
+    };
+    setConsultas((prev) => [nueva, ...prev]);
+    setPreguntaInput('');
+    notificar('exito', 'PREGUNTA REGISTRADA (HU24-CA02)', 'Consulta agregada en estado Pendiente.');
+  };
+
+  const manejarSimularRespuestaPregunta = (consultaId, producto) => {
+    setConsultas((prev) =>
+      prev.map((c) => {
+        if (c.id !== consultaId) return c;
+        return {
+          ...c,
+          estado: 'Respondida',
+          respuestaSimulada: generarRespuestaSimuladaPregunta(producto, c.pregunta),
+        };
+      })
+    );
+    notificar(
+      'info',
+      'RESPUESTA SIMULADA GENERADA (HU24-CA04)',
+      'La pregunta pasó a Respondida con una respuesta automática de demostración.'
+    );
+  };
+
+  const manejarToggleSuscripcionStock = (producto, variante) => {
+    if (!producto || !variante) return;
+    const activa = suscripcionesReposicion.some(
+      (s) => s.productoId === producto.id && s.varianteId === variante.id && s.activa
+    );
+    if (activa) {
+      const res = cancelarSuscripcionReposicion(
+        suscripcionesReposicion,
+        producto.id,
+        variante.id
+      );
+      setSuscripcionesReposicion(res.lista);
+      notificar('info', 'AVISO CANCELADO (HU30-CA04)', res.mensaje);
+    } else {
+      const res = suscribirReposicion(suscripcionesReposicion, {
+        productoId: producto.id,
+        varianteId: variante.id,
+        productoNombre: producto.nombre,
+        varianteEtiqueta: variante.etiqueta,
+      });
+      if (!res.ok) {
+        notificar('alerta', 'SUSCRIPCIÓN YA ACTIVA (HU30-CA03)', res.mensaje);
+        return;
+      }
+      setSuscripcionesReposicion(res.lista);
+      notificar('exito', 'SUSCRIPCIÓN ACTIVADA (HU30-CA01)', res.mensaje);
+    }
+  };
+
+  const manejarSimularReposicion = (producto, variante) => {
+    if (!producto || !variante) return;
+    const res = ejecutarReposicionSimulada({
+      productos,
+      suscripciones: suscripcionesReposicion,
+      notificaciones,
+      productoId: producto.id,
+      varianteId: variante.id,
+      unidades: REGLAS_V2.UNIDADES_REPOSICION_DEMO,
+    });
+    setProductos(res.productos);
+    setSuscripcionesReposicion(res.suscripciones);
+    setNotificaciones(res.notificaciones);
+    notificar(
+      'exito',
+      'REPOSICIÓN SIMULADA (HU30-CA02)',
+      res.avisoGenerado
+        ? `Se añadieron +${REGLAS_V2.UNIDADES_REPOSICION_DEMO} uds. a "${variante.etiqueta}" y se creó el aviso en Notificaciones.`
+        : `Se añadieron +${REGLAS_V2.UNIDADES_REPOSICION_DEMO} uds. a "${variante.etiqueta}" (sin suscripción activa, no se generó aviso).`
+    );
+  };
+
+  const manejarCompartirProducto = async (producto, variante) => {
+    const mensaje = generarTextoCompartirProducto(producto, variante);
+    setTextoCompartirVisible(mensaje);
+    try {
+      await Share.share({ message: mensaje, title: producto.nombre });
+    } catch (e) {
+      // En navegador o entornos sin Share nativo queda visible la tarjeta de texto compartible
+    }
+    notificar(
+      'info',
+      'RESUMEN PARA COMPARTIR LISTO (HU35)',
+      'Se generó el mensaje con nombre y precio (sin enlace público falso).'
+    );
+  };
+
+  const manejarCrearTicketSoporte = (datos) => {
+    const res = crearTicketSoporte(ticketsSoporte, datos);
+    if (!res.ok) {
+      notificar('error', 'VALIDACIÓN DE SOPORTE (HU32-CA03)', res.mensaje);
+      return false;
+    }
+    setTicketsSoporte(res.tickets);
+    notificar('exito', 'CASO CREADO (HU32-CA02)', res.mensaje);
+    return true;
+  };
+
+  const manejarSimularRespuestaTicket = (ticketId) => {
+    const res = simularRespuestaTicket(ticketsSoporte, ticketId);
+    if (!res.ok) {
+      notificar('alerta', 'SOPORTE (HU32)', res.mensaje);
+      return;
+    }
+    setTicketsSoporte(res.tickets);
+    notificar('exito', 'RESPUESTA SIMULADA (HU32-CA04)', res.mensaje);
+  };
+
+  // ==========================================================================
+  // 8. PANEL DE VENDEDOR (HU18 COMPATIBLE CON VARIANTES) Y RESEÑAS (HU19)
   // ==========================================================================
   const limpiarFormularioVendedor = () => {
     setEditandoId(null);
     setVendNombre('');
+    setVendMarca('Materials Group UNSC');
     setVendCategoria(MARCA_INFO.categorias[0]);
     setVendPrecio('');
     setVendStock('');
@@ -547,17 +938,14 @@ export default function App() {
   const cargarProductoParaEditar = (producto) => {
     setEditandoId(producto.id);
     setVendNombre(producto.nombre);
+    setVendMarca(producto.marca || 'Materials Group UNSC');
     setVendCategoria(producto.categoria);
     setVendPrecio(String(producto.precio));
-    setVendStock(String(producto.stock));
+    setVendStock(String(obtenerStockProducto(producto)));
     setVendDescripcion(producto.descripcion);
     setVendInsignia(producto.insignia || producto.id);
     setVendImagenUrl(producto.imagenPersonalizada || '');
-    notificar(
-      'info',
-      `EDITANDO ${producto.id}`,
-      `Modifica los campos de "${producto.nombre}" y presiona "Actualizar producto".`
-    );
+    notificar('info', `EDITANDO ${producto.id}`, `Modifica "${producto.nombre}" y guarda.`);
   };
 
   const guardarProductoVendedor = () => {
@@ -568,10 +956,8 @@ export default function App() {
       stockTexto: vendStock.trim(),
       descripcion: vendDescripcion,
     });
-
-    // HU18-CA03: Rechazar precio <= 0 o stock < 0 y explicar el error
     if (!validacion.valido) {
-      notificar('error', 'ERROR DE VALIDACIÓN EN PANEL VENDEDOR (HU18)', validacion.mensaje);
+      notificar('error', 'ERROR PANEL VENDEDOR (HU18)', validacion.mensaje);
       return;
     }
 
@@ -579,112 +965,109 @@ export default function App() {
       CATEGORIAS_CONFIG[vendCategoria] || CATEGORIAS_CONFIG['Armaduras Mjolnir'];
 
     if (editandoId) {
-      // HU18-CA02: Actualizar producto existente sin duplicar la referencia
       setProductos((prev) =>
-        prev.map((prod) =>
-          prod.id === editandoId
-            ? {
-                ...prod,
-                nombre: vendNombre.trim(),
-                categoria: vendCategoria,
-                precio: validacion.precio,
-                stock: validacion.stock,
-                descripcion: vendDescripcion.trim(),
-                icono: configCat.icono,
-                insignia:
-                  vendInsignia.trim().length > 0
-                    ? vendInsignia.trim().toUpperCase()
-                    : prod.insignia,
-                imagenPersonalizada:
-                  vendImagenUrl.trim().length > 0 ? vendImagenUrl.trim() : null,
-              }
-            : prod
-        )
-      );
+        prev.map((prod) => {
+          if (prod.id !== editandoId) return prod;
+          // Mantiene una sola fuente de verdad en variantes: ajusta la variante 0
+          const otrasVariantesStock = (prod.variantes || [])
+            .slice(1)
+            .reduce((acc, v) => acc + v.stock, 0);
+          const stockPrimera = Math.max(0, validacion.stock - otrasVariantesStock);
+          const variantesAct =
+            Array.isArray(prod.variantes) && prod.variantes.length > 0
+              ? prod.variantes.map((v, idx) =>
+                  idx === 0 ? { ...v, precio: validacion.precio, stock: stockPrimera } : v
+                )
+              : [
+                  {
+                    id: `VAR-${prod.id}-U`,
+                    etiqueta: 'Estándar',
+                    precio: validacion.precio,
+                    stock: validacion.stock,
+                  },
+                ];
 
-      setCarrito((prevCarrito) =>
-        prevCarrito
-          .map((item) =>
-            item.id === editandoId
-              ? {
-                  ...item,
-                  nombre: vendNombre.trim(),
-                  categoria: vendCategoria,
-                  precio: validacion.precio,
-                  cantidad: Math.min(item.cantidad, validacion.stock),
-                }
-              : item
-          )
-          .filter((item) => item.cantidad > 0)
+          return sincronizarStockDesdeVariantes(
+            {
+              ...prod,
+              nombre: vendNombre.trim(),
+              marca: vendMarca.trim() || prod.marca || 'Materials Group UNSC',
+              categoria: vendCategoria,
+              precio: validacion.precio,
+              precioBase: validacion.precio,
+              descripcion: vendDescripcion.trim(),
+              icono: configCat.icono,
+              insignia:
+                vendInsignia.trim().length > 0
+                  ? vendInsignia.trim().toUpperCase()
+                  : prod.insignia,
+              imagenPersonalizada:
+                vendImagenUrl.trim().length > 0 ? vendImagenUrl.trim() : null,
+            },
+            variantesAct
+          );
+        })
       );
-
-      notificar(
-        'exito',
-        `SUMINISTRO ${editandoId} ACTUALIZADO (HU18-CA02)`,
-        `Se actualizó "${vendNombre.trim()}" en el catálogo sin duplicar su referencia.`
-      );
+      notificar('exito', `PRODUCTO ${editandoId} ACTUALIZADO`, 'Stock sincronizado con variantes.');
       limpiarFormularioVendedor();
     } else {
-      // HU18-CA01: Crear producto con id único, categoría, precio y stock
       const nuevoNumero = productos.length + 1;
       let nuevoId = `PROD-${String(nuevoNumero).padStart(3, '0')}`;
       while (productos.some((p) => p.id === nuevoId)) {
         nuevoId = `PROD-${nuevoNumero}-${Math.floor(100 + Math.random() * 900)}`;
       }
-
-      const nuevoProducto = {
-        id: nuevoId,
-        nombre: vendNombre.trim(),
-        categoria: vendCategoria,
-        precio: validacion.precio,
-        stock: validacion.stock,
-        descripcion: vendDescripcion.trim(),
-        icono: configCat.icono,
-        insignia:
-          vendInsignia.trim().length > 0
-            ? vendInsignia.trim().toUpperCase()
-            : `${configCat.codigo} · ${nuevoId}`,
-        imagenPersonalizada:
-          vendImagenUrl.trim().length > 0 ? vendImagenUrl.trim() : null,
-        colorTarjeta: configCat.colorFondo,
-        especificaciones: `Categoría: ${vendCategoria} | Registro UNSC: ${nuevoId}`,
-        resenas: [],
-      };
-
-      setProductos((prev) => [nuevoProducto, ...prev]);
-      notificar(
-        'exito',
-        `NUEVO PRODUCTO ${nuevoId} REGISTRADO (HU18-CA01)`,
-        `"${nuevoProducto.nombre}" ya está disponible en el catálogo en la categoría ${nuevoProducto.categoria}.`
+      const nuevoProducto = sincronizarStockDesdeVariantes(
+        {
+          id: nuevoId,
+          nombre: vendNombre.trim(),
+          marca: vendMarca.trim() || 'Materials Group UNSC',
+          categoria: vendCategoria,
+          precio: validacion.precio,
+          precioBase: validacion.precio,
+          stock: validacion.stock,
+          descripcion: vendDescripcion.trim(),
+          icono: configCat.icono,
+          insignia:
+            vendInsignia.trim().length > 0
+              ? vendInsignia.trim().toUpperCase()
+              : `${configCat.codigo} · ${nuevoId}`,
+          imagenPersonalizada:
+            vendImagenUrl.trim().length > 0 ? vendImagenUrl.trim() : null,
+          colorTarjeta: configCat.colorFondo,
+          especificaciones: `Categoría: ${vendCategoria} | Registro UNSC: ${nuevoId}`,
+          resenas: [],
+        },
+        [
+          {
+            id: `VAR-${nuevoId}-U`,
+            etiqueta: 'Edición Estándar',
+            precio: validacion.precio,
+            stock: validacion.stock,
+          },
+        ]
       );
+      setProductos((prev) => [nuevoProducto, ...prev]);
+      notificar('exito', `NUEVO PRODUCTO ${nuevoId}`, `"${nuevoProducto.nombre}" registrado.`);
       limpiarFormularioVendedor();
     }
   };
 
-  // ==========================================================================
-  // 9. RESEÑAS FICTICIAS EN DETALLE DEL PRODUCTO (HU19: CA01, CA02, CA03)
-  // ==========================================================================
   const registrarResenaProducto = (productoId) => {
     const validacion = validarValoracionResena(
       resenaEstrellasInput.trim(),
       resenaAutorInput,
       resenaComentarioInput
     );
-
-    // HU19-CA02: Si la valoración está fuera del rango 1..5, mostrar error
     if (!validacion.valido) {
-      notificar('error', 'VALORACIÓN FUERA DE RANGO (HU19-CA02)', validacion.mensaje);
+      notificar('error', 'VALORACIÓN FUERA DE RANGO (HU19)', validacion.mensaje);
       return;
     }
-
     const nuevaResena = {
       id: `REV-${Date.now()}`,
       autor: validacion.autor,
       estrellas: validacion.estrellas,
       comentario: validacion.comentario,
     };
-
-    // HU19-CA01 y CA03: Agregar valoración y recalcular promedio
     setProductos((prev) =>
       prev.map((prod) =>
         prod.id === productoId
@@ -692,77 +1075,98 @@ export default function App() {
           : prod
       )
     );
-
     setResenaAutorInput('');
     setResenaComentarioInput('');
-    notificar(
-      'exito',
-      `VALORACIÓN DE ${validacion.estrellas} ★ REGISTRADA (HU19)`,
-      'Tu calificación fue agregada al detalle del producto y el promedio fue actualizado.'
-    );
+    notificar('exito', 'RESEÑA REGISTRADA (HU19)', `Calificación ${validacion.estrellas} ★ guardada.`);
   };
 
   // ==========================================================================
-  // 10. RESTAURAR ESTADO DE FÁBRICA PARA PRUEBAS Y SUSTENTACIÓN
+  // 9. FILTROS COMBINADOS (HU23) Y RESTAURAR FÁBRICA
   // ==========================================================================
+  const aplicarRangoPrecioFiltro = () => {
+    const res = validarRangoPrecio(precioMinInput, precioMaxInput);
+    if (!res.valido) {
+      setErrorFiltroPrecio(res.error);
+      notificar('error', 'RANGO DE PRECIOS INVÁLIDO (HU23-CA02)', res.error);
+      return;
+    }
+    setErrorFiltroPrecio('');
+    setRangoPrecioAplicado({ min: res.min, max: res.max });
+    notificar('info', 'FILTRO DE PRECIO APLICADO (HU23)', 'Catálogo actualizado con el rango elegido.');
+  };
+
+  const restablecerFiltrosCatalogo = () => {
+    setBusqueda('');
+    setCategoriaSeleccionada('Todas');
+    setOrdenPrecio('ninguno');
+    setMarcaSeleccionada('Todas');
+    setPrecioMinInput('');
+    setPrecioMaxInput('');
+    setRangoPrecioAplicado({ min: null, max: null });
+    setSoloDisponibles(false);
+    setErrorFiltroPrecio('');
+    notificar('info', 'FILTROS RESTABLECIDOS (HU23-CA04)', 'Se recuperó el catálogo completo.');
+  };
+
   const restaurarSimulacionCompleta = async () => {
     await limpiarEstadoLocal();
     setProductos(PRODUCTOS_INICIALES);
     setFavoritos(['PROD-001']);
     setCarrito([]);
-    setHistorialPedidos([]);
+    setHistorialPedidos(PEDIDOS_INICIALES_V2);
+    setComparacion([]);
+    setDirecciones(DIRECCIONES_INICIALES);
+    setDireccionSeleccionadaId(DIRECCIONES_INICIALES[0]?.id || null);
+    setModalidadEnvio('estandar');
+    setConsultas(CONSULTAS_INICIALES);
+    setNotificaciones([]);
+    setSuscripcionesReposicion([]);
+    setTicketsSoporte([]);
     setCuponAplicado(null);
     setCodigoCuponInput('');
-    setBusqueda('');
-    setCategoriaSeleccionada('Todas');
-    setOrdenPrecio('ninguno');
     setUltimoPedidoConfirmado(null);
+    setPedidoDetalleCodigo(PEDIDOS_INICIALES_V2[0]?.codigo || null);
+    restablecerFiltrosCatalogo();
     limpiarFormularioVendedor();
     notificar(
       'exito',
-      'DATOS INICIALES RESTAURADOS',
-      'Se restablecieron los 14 productos originales del UNSC con sus imágenes oficiales, stock inicial y almacenamiento local.'
+      'ESTADO DE FÁBRICA 2.0 RESTAURADO',
+      'Se restablecieron productos con variantes, direcciones de prueba y pedidos iniciales.'
     );
   };
 
   // ==========================================================================
-  // 11. CÁLCULOS DERIVADOS: FILTRADO, BÚSQUEDA, ORDENAMIENTO Y RESUMEN
+  // 10. CÁLCULOS DERIVADOS
   // ==========================================================================
-  const productosFiltrados = productos.filter((prod) => {
-    const coincideCategoria =
-      categoriaSeleccionada === 'Todas' ||
-      prod.categoria === categoriaSeleccionada;
-
-    const termino = busqueda.trim().toLowerCase();
-    const coincideBusqueda =
-      termino.length === 0 || prod.nombre.toLowerCase().includes(termino);
-
-    return coincideCategoria && coincideBusqueda;
+  const marcasDisponibles = obtenerMarcasDisponibles(productos);
+  const resultadoFiltros = aplicarFiltrosCatalogo(productos, {
+    busqueda,
+    categoria: categoriaSeleccionada,
+    marca: marcaSeleccionada,
+    precioMin: rangoPrecioAplicado.min,
+    precioMax: rangoPrecioAplicado.max,
+    soloDisponibles,
+    ordenPrecio,
   });
-
-  const productosVisibles = [...productosFiltrados].sort((a, b) => {
-    if (ordenPrecio === 'asc') return a.precio - b.precio;
-    if (ordenPrecio === 'desc') return b.precio - a.precio;
-    return 0;
-  });
-
-  const productosFavoritos = productos.filter((prod) =>
-    favoritos.includes(prod.id)
-  );
-
+  const productosVisibles = resultadoFiltros.resultados;
+  const productosFavoritos = productos.filter((prod) => favoritos.includes(prod.id));
+  const productosComparados = comparacion
+    .map((id) => productos.find((p) => p.id === id))
+    .filter(Boolean);
   const productoDetalle =
     productos.find((prod) => prod.id === productoDetalleId) || productos[0];
-
-  const resumenCarrito = calcularResumenCarrito(carrito, cuponAplicado);
+  const noLeidasCount = notificaciones.filter((n) => !n.leida).length;
 
   // ==========================================================================
-  // 12. COMPONENTES DE INTERFAZ Y TARJETAS TÁCTICAS CON IMAGEN OFICIAL HALO
+  // 11. TARJETA DE PRODUCTO (CATÁLOGO Y FAVORITOS)
   // ==========================================================================
-
   const renderTarjetaProducto = ({ item }) => {
     const esFavorito = favoritos.includes(item.id);
-    const enCarrito = obtenerCantidadEnCarrito(item.id);
-    const agotado = item.stock <= 0;
+    const enComparador = comparacion.includes(item.id);
+    const enCarrito = obtenerUnidadesProductoEnCarrito(item.id);
+    const stockTotal = obtenerStockProducto(item);
+    const agotado = stockTotal <= 0;
+    const multiVar = tieneMultiplesVariantes(item);
     const infoEstrellas = calcularPromedioEstrellas(item.resenas);
     const configCat =
       CATEGORIAS_CONFIG[item.categoria] || CATEGORIAS_CONFIG['Armaduras Mjolnir'];
@@ -771,48 +1175,53 @@ export default function App() {
       <View
         style={[
           styles.cardProducto,
-          agotado && styles.cardProductoAgotado,
+          { backgroundColor: tema.tarjeta, borderColor: agotado ? tema.error : tema.borde },
         ]}
       >
-        {/* Cabecera visual táctica con IMAGEN OFICIAL DEL JUEGO HALO */}
         <Pressable
           onPress={() => abrirDetalleProducto(item.id)}
           style={[
             styles.cardVisualHeader,
-            { backgroundColor: item.colorTarjeta || configCat.colorFondo },
+            {
+              backgroundColor: item.colorTarjeta || configCat.colorFondo,
+              borderBottomColor: tema.borde,
+            },
           ]}
         >
           <View style={styles.cardTopRow}>
-            <View
-              style={[
-                styles.badgeCodigo,
-                { borderColor: configCat.colorAcento },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.badgeCodigoTexto,
-                  { color: configCat.colorAcento },
-                ]}
-              >
-                {item.id} · {item.insignia || configCat.codigo}
+            <View style={[styles.badgeCodigo, { borderColor: configCat.colorAcento }]}>
+              <Text style={[styles.badgeCodigoTexto, { color: configCat.colorAcento, fontSize: fs(10) }]}>
+                {item.id} · {item.marca || 'UNSC'}
               </Text>
             </View>
 
-            <Pressable
-              onPress={() => alternarFavorito(item)}
-              style={[
-                styles.btnFavoritoIcono,
-                esFavorito && styles.btnFavoritoIconoActivo,
-              ]}
-            >
-              <Text style={styles.btnFavoritoTexto}>
-                {esFavorito ? '★ FAV' : '☆ FAV'}
-              </Text>
-            </Pressable>
+            <View style={{ flexDirection: 'row', gap: 6 }}>
+              <Pressable
+                onPress={() => manejarToggleComparar(item)}
+                style={[
+                  styles.btnFavoritoIcono,
+                  enComparador && { backgroundColor: tema.infoFondo, borderColor: tema.info },
+                ]}
+              >
+                <Text style={[styles.btnFavoritoTexto, { color: enComparador ? tema.info : '#E2E8F0', fontSize: fs(11) }]}>
+                  {enComparador ? '✓ Comp.' : '⚖️ Comp.'}
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => alternarFavorito(item)}
+                style={[
+                  styles.btnFavoritoIcono,
+                  esFavorito && styles.btnFavoritoIconoActivo,
+                ]}
+              >
+                <Text style={[styles.btnFavoritoTexto, { fontSize: fs(11) }]}>
+                  {esFavorito ? '★ FAV' : '☆ FAV'}
+                </Text>
+              </Pressable>
+            </View>
           </View>
 
-          {/* Render Oficial del Videojuego Halo */}
           <View style={styles.cardImagenWrapper}>
             <Image
               source={obtenerFuenteImagen(item)}
@@ -822,34 +1231,48 @@ export default function App() {
           </View>
 
           <View style={styles.cardFooterHudRow}>
-            <Text
-              style={[
-                styles.cardCategoriaTag,
-                { color: configCat.colorAcento },
-              ]}
-            >
+            <Text style={[styles.cardCategoriaTag, { color: configCat.colorAcento, fontSize: fs(11) }]}>
               {configCat.icono} {item.categoria.toUpperCase()}
             </Text>
-            <Text style={styles.cardEstrellasTexto}>
+            <Text style={[styles.cardEstrellasTexto, { fontSize: fs(12) }]}>
               {infoEstrellas.texto}
             </Text>
           </View>
         </Pressable>
 
-        {/* Cuerpo de datos obligatorios HU03-CA02: nombre, precio en COP, categoría y disponibilidad */}
         <View style={styles.cardBody}>
           <Pressable onPress={() => abrirDetalleProducto(item.id)}>
-            <Text style={styles.cardNombre}>{item.nombre}</Text>
+            <Text style={[styles.cardNombre, { color: tema.textoPrincipal, fontSize: fs(16) }]}>
+              {item.nombre}
+            </Text>
           </Pressable>
 
-          <Text style={styles.cardDescripcionBreve} numberOfLines={2}>
+          <Text
+            style={[styles.cardDescripcionBreve, { color: tema.textoSuave, fontSize: fs(12) }]}
+            numberOfLines={2}
+          >
             {item.descripcion}
           </Text>
 
+          {multiVar && (
+            <View
+              style={[
+                styles.badgeVariantesCard,
+                { backgroundColor: tema.infoFondo, borderColor: tema.info },
+              ]}
+            >
+              <Text style={[styles.badgeVariantesCardTxt, { color: tema.info, fontSize: fs(11) }]}>
+                🔀 {item.variantes.length} variantes disponibles (talla/color/edición)
+              </Text>
+            </View>
+          )}
+
           <View style={styles.cardPrecioStockRow}>
             <View>
-              <Text style={styles.cardPrecioLabel}>PRECIO UNITARIO (COP)</Text>
-              <Text style={styles.cardPrecioValor}>
+              <Text style={[styles.cardPrecioLabel, { color: tema.textoSuave, fontSize: fs(10) }]}>
+                {multiVar ? 'PRECIO BASE (COP)' : 'PRECIO UNITARIO (COP)'}
+              </Text>
+              <Text style={[styles.cardPrecioValor, { color: tema.primario, fontSize: fs(18) }]}>
                 {formatearCOP(item.precio)} COP
               </Text>
             </View>
@@ -857,55 +1280,75 @@ export default function App() {
             <View
               style={[
                 styles.badgeStock,
-                agotado ? styles.badgeStockAgotado : styles.badgeStockDisponible,
+                {
+                  backgroundColor: agotado ? tema.errorFondo : tema.primarioFondo,
+                  borderColor: agotado ? tema.error : tema.primario,
+                },
               ]}
             >
               <Text
                 style={[
                   styles.badgeStockTexto,
-                  agotado
-                    ? styles.badgeStockTextoAgotado
-                    : styles.badgeStockTextoDisponible,
+                  { color: agotado ? tema.error : tema.primario, fontSize: fs(11) },
                 ]}
               >
-                {agotado
-                  ? 'AGOTADO (Stock: 0)'
-                  : `Stock: ${item.stock} uds.`}
+                {agotado ? 'AGOTADO (Stock: 0)' : `Stock total: ${stockTotal} uds.`}
               </Text>
             </View>
           </View>
 
           {enCarrito > 0 && (
-            <View style={styles.indicadorEnCarrito}>
-              <Text style={styles.indicadorEnCarritoTexto}>
+            <View
+              style={[
+                styles.indicadorEnCarrito,
+                { backgroundColor: tema.infoFondo, borderColor: tema.info },
+              ]}
+            >
+              <Text style={[styles.indicadorEnCarritoTexto, { color: tema.info, fontSize: fs(12) }]}>
                 🛒 En tu carrito: {enCarrito} unidad(es)
               </Text>
             </View>
           )}
 
-          {/* Botones de acción de la tarjeta */}
           <View style={styles.cardActionsRow}>
             <Pressable
               onPress={() => abrirDetalleProducto(item.id)}
-              style={styles.btnSecundarioCard}
+              style={[
+                styles.btnSecundarioCard,
+                { backgroundColor: tema.superficie, borderColor: tema.borde },
+              ]}
             >
-              <Text style={styles.btnSecundarioCardTexto}>🔍 Ver detalle</Text>
+              <Text
+                style={[
+                  styles.btnSecundarioCardTexto,
+                  { color: tema.textoPrincipal, fontSize: fs(13) },
+                ]}
+              >
+                🔍 Ver detalle
+              </Text>
             </Pressable>
 
             <Pressable
-              onPress={() => agregarAlCarrito(item)}
+              onPress={() =>
+                multiVar
+                  ? abrirDetalleProducto(item.id)
+                  : agregarAlCarritoConVariante(item, item.variantes?.[0]?.id, 1)
+              }
               style={[
                 styles.btnPrimarioCard,
-                agotado && styles.btnPrimarioCardAgotado,
+                {
+                  backgroundColor: agotado ? tema.errorFondo : tema.primarioBoton,
+                  borderColor: agotado ? tema.error : tema.primario,
+                },
               ]}
             >
               <Text
                 style={[
                   styles.btnPrimarioCardTexto,
-                  agotado && styles.btnPrimarioCardTextoAgotado,
+                  { color: agotado ? tema.error : '#F8FAFC', fontSize: fs(13) },
                 ]}
               >
-                {agotado ? '🚫 Agotado' : '➕ Agregar'}
+                {agotado ? '🚫 Agotado' : multiVar ? '🔀 Elegir variante' : '➕ Agregar'}
               </Text>
             </Pressable>
           </View>
@@ -915,10 +1358,10 @@ export default function App() {
   };
 
   // ==========================================================================
-  // 13. RENDERIZADO DE VISTAS
+  // 12. VISTAS PRINCIPALES
   // ==========================================================================
 
-  // VISTA 1: CATÁLOGO PRINCIPAL (HU03, HU04, HU05, HU06)
+  // VISTA 1: CATÁLOGO (HU03–HU06, HU22, HU23)
   const renderVistaCatalogo = () => {
     const categoriasFiltro = ['Todas', ...MARCA_INFO.categorias];
 
@@ -929,57 +1372,85 @@ export default function App() {
         renderItem={renderTarjetaProducto}
         contentContainerStyle={styles.listaContenedor}
         ListHeaderComponent={
-          <View style={styles.panelFiltrosContainer}>
-            {/* Buscador por palabra clave (HU04) */}
-            <Text style={styles.seccionSubtitulo}>
-              BUSCADOR TÁCTICO DE SUMINISTROS (HU04)
+          <View
+            style={[
+              styles.panelFiltrosContainer,
+              { backgroundColor: tema.tarjeta, borderColor: tema.borde },
+            ]}
+          >
+            {comparacion.length > 0 && (
+              <Pressable
+                onPress={() => irAVista('comparador')}
+                style={[
+                  styles.bannerComparadorRapido,
+                  { backgroundColor: tema.infoFondo, borderColor: tema.info },
+                ]}
+              >
+                <Text style={[styles.bannerComparadorTxt, { color: tema.info, fontSize: fs(12) }]}>
+                  ⚖️ {comparacion.length}/3 producto(s) en comparación · Toca aquí para abrir Comparador →
+                </Text>
+              </Pressable>
+            )}
+
+            <Text style={[styles.seccionSubtitulo, { color: tema.textoSuave, fontSize: fs(11) }]}>
+              BUSCADOR (HU04) Y FILTROS COMBINADOS (HU23)
             </Text>
             <View style={styles.buscadorRow}>
               <TextInput
-                style={styles.inputBuscador}
+                style={[
+                  styles.inputBuscador,
+                  {
+                    backgroundColor: tema.inputFondo,
+                    color: tema.textoPrincipal,
+                    borderColor: tema.borde,
+                    fontSize: fs(13),
+                  },
+                ]}
                 value={busqueda}
                 onChangeText={setBusqueda}
-                placeholder="Buscar por nombre (ej. Mjolnir, Pelican, Rifle, Warthog)..."
-                placeholderTextColor="#64748B"
+                placeholder="Buscar por nombre o marca..."
+                placeholderTextColor={tema.placeholder}
               />
               {busqueda.length > 0 && (
                 <Pressable
                   onPress={() => setBusqueda('')}
-                  style={styles.btnLimpiarBusqueda}
+                  style={[styles.btnLimpiarBusqueda, { backgroundColor: tema.superficie }]}
                 >
-                  <Text style={styles.btnLimpiarBusquedaTexto}>✕ Limpiar</Text>
+                  <Text
+                    style={[
+                      styles.btnLimpiarBusquedaTexto,
+                      { color: tema.textoPrincipal, fontSize: fs(12) },
+                    ]}
+                  >
+                    ✕
+                  </Text>
                 </Pressable>
               )}
             </View>
 
-            {/* Filtro por las 4 Categorías (HU05) */}
-            <Text style={styles.seccionSubtitulo}>
-              FILTRAR POR CATEGORÍA UNSC (HU05)
+            <Text style={[styles.seccionSubtitulo, { color: tema.textoSuave, fontSize: fs(11) }]}>
+              CATEGORÍA (HU05)
             </Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.chipsScroll}
-            >
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsScroll}>
               {categoriasFiltro.map((cat) => {
                 const activa = categoriaSeleccionada === cat;
-                const iconoCat =
-                  cat === 'Todas'
-                    ? '🌐'
-                    : CATEGORIAS_CONFIG[cat]?.icono || '📦';
+                const iconoCat = cat === 'Todas' ? '🌐' : CATEGORIAS_CONFIG[cat]?.icono || '📦';
                 return (
                   <Pressable
                     key={cat}
                     onPress={() => setCategoriaSeleccionada(cat)}
                     style={[
                       styles.chipCategoria,
-                      activa && styles.chipCategoriaActiva,
+                      {
+                        backgroundColor: activa ? tema.primarioFondo : tema.superficie,
+                        borderColor: activa ? tema.primario : tema.borde,
+                      },
                     ]}
                   >
                     <Text
                       style={[
                         styles.chipCategoriaTexto,
-                        activa && styles.chipCategoriaTextoActivo,
+                        { color: activa ? tema.primario : tema.textoSecundario, fontSize: fs(12) },
                       ]}
                     >
                       {iconoCat} {cat}
@@ -989,97 +1460,193 @@ export default function App() {
               })}
             </ScrollView>
 
-            {/* Ordenar por precio (HU06) */}
-            <Text style={styles.seccionSubtitulo}>
-              ORDENAR POR PRECIO EN COP (HU06)
+            <Text style={[styles.seccionSubtitulo, { color: tema.textoSuave, fontSize: fs(11) }]}>
+              MARCA (HU23)
             </Text>
-            <View style={styles.ordenRow}>
-              <Pressable
-                onPress={() => setOrdenPrecio('ninguno')}
-                style={[
-                  styles.btnOrden,
-                  ordenPrecio === 'ninguno' && styles.btnOrdenActivo,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.btnOrdenTexto,
-                    ordenPrecio === 'ninguno' && styles.btnOrdenTextoActivo,
-                  ]}
-                >
-                  Por defecto
-                </Text>
-              </Pressable>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsScroll}>
+              {marcasDisponibles.map((m) => {
+                const activa = marcaSeleccionada === m;
+                return (
+                  <Pressable
+                    key={m}
+                    onPress={() => setMarcaSeleccionada(m)}
+                    style={[
+                      styles.chipCategoria,
+                      {
+                        backgroundColor: activa ? tema.infoFondo : tema.superficie,
+                        borderColor: activa ? tema.info : tema.borde,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.chipCategoriaTexto,
+                        { color: activa ? tema.info : tema.textoSecundario, fontSize: fs(12) },
+                      ]}
+                    >
+                      🏷️ {m}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
 
-              <Pressable
-                onPress={() => setOrdenPrecio('asc')}
+            <Text style={[styles.seccionSubtitulo, { color: tema.textoSuave, fontSize: fs(11) }]}>
+              RANGO DE PRECIO EN COP Y DISPONIBILIDAD (HU23)
+            </Text>
+            <View style={styles.rangoPrecioRow}>
+              <TextInput
                 style={[
-                  styles.btnOrden,
-                  ordenPrecio === 'asc' && styles.btnOrdenActivo,
+                  styles.inputPrecioRango,
+                  {
+                    backgroundColor: tema.inputFondo,
+                    color: tema.textoPrincipal,
+                    borderColor: tema.borde,
+                    fontSize: fs(12),
+                  },
+                ]}
+                value={precioMinInput}
+                onChangeText={setPrecioMinInput}
+                keyboardType="numeric"
+                placeholder="Mínimo $"
+                placeholderTextColor={tema.placeholder}
+              />
+              <TextInput
+                style={[
+                  styles.inputPrecioRango,
+                  {
+                    backgroundColor: tema.inputFondo,
+                    color: tema.textoPrincipal,
+                    borderColor: tema.borde,
+                    fontSize: fs(12),
+                  },
+                ]}
+                value={precioMaxInput}
+                onChangeText={setPrecioMaxInput}
+                keyboardType="numeric"
+                placeholder="Máximo $"
+                placeholderTextColor={tema.placeholder}
+              />
+              <Pressable
+                onPress={aplicarRangoPrecioFiltro}
+                style={[
+                  styles.btnAplicarRango,
+                  { backgroundColor: tema.infoFondo, borderColor: tema.info },
                 ]}
               >
-                <Text
-                  style={[
-                    styles.btnOrdenTexto,
-                    ordenPrecio === 'asc' && styles.btnOrdenTextoActivo,
-                  ]}
-                >
-                  ↑ Menor a mayor
-                </Text>
-              </Pressable>
-
-              <Pressable
-                onPress={() => setOrdenPrecio('desc')}
-                style={[
-                  styles.btnOrden,
-                  ordenPrecio === 'desc' && styles.btnOrdenActivo,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.btnOrdenTexto,
-                    ordenPrecio === 'desc' && styles.btnOrdenTextoActivo,
-                  ]}
-                >
-                  ↓ Mayor a menor
+                <Text style={[styles.btnAplicarRangoTxt, { color: tema.info, fontSize: fs(12) }]}>
+                  Aplicar rango
                 </Text>
               </Pressable>
             </View>
 
-            {/* Resumen de resultados visibles */}
-            <View style={styles.barraEstadoCatalogo}>
-              <Text style={styles.barraEstadoCatalogoTexto}>
-                Mostrando {productosVisibles.length} de {productos.length} suministros oficiales
-                {categoriaSeleccionada !== 'Todas'
-                  ? ` · Categoría: ${categoriaSeleccionada}`
-                  : ''}
-                {busqueda.trim() ? ` · Búsqueda: "${busqueda.trim()}"` : ''}
+            {errorFiltroPrecio ? (
+              <Text style={[styles.errorInlineTxt, { color: tema.error, fontSize: fs(12) }]}>
+                ⚠️ {errorFiltroPrecio}
+              </Text>
+            ) : null}
+
+            <View style={styles.filtrosExtrasRow}>
+              <Pressable
+                onPress={() => setSoloDisponibles((v) => !v)}
+                style={[
+                  styles.btnToggleDisp,
+                  {
+                    backgroundColor: soloDisponibles ? tema.primarioFondo : tema.superficie,
+                    borderColor: soloDisponibles ? tema.primario : tema.borde,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.btnToggleDispTxt,
+                    { color: soloDisponibles ? tema.primario : tema.textoSecundario, fontSize: fs(12) },
+                  ]}
+                >
+                  {soloDisponibles ? '☑ Solo disponibles' : '☐ Solo disponibles'}
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={restablecerFiltrosCatalogo}
+                style={[
+                  styles.btnRestablecer,
+                  { backgroundColor: tema.secundarioFondo, borderColor: tema.secundario },
+                ]}
+              >
+                <Text style={[styles.btnRestablecerTxt, { color: tema.secundario, fontSize: fs(12) }]}>
+                  🔄 Restablecer
+                </Text>
+              </Pressable>
+            </View>
+
+            <Text style={[styles.seccionSubtitulo, { color: tema.textoSuave, fontSize: fs(11) }]}>
+              ORDENAR POR PRECIO (HU06)
+            </Text>
+            <View style={styles.ordenRow}>
+              {[
+                { id: 'ninguno', label: 'Por defecto' },
+                { id: 'asc', label: '↑ Menor a mayor' },
+                { id: 'desc', label: '↓ Mayor a menor' },
+              ].map((op) => {
+                const activo = ordenPrecio === op.id;
+                return (
+                  <Pressable
+                    key={op.id}
+                    onPress={() => setOrdenPrecio(op.id)}
+                    style={[
+                      styles.btnOrden,
+                      {
+                        backgroundColor: activo ? tema.secundarioFondo : tema.superficie,
+                        borderColor: activo ? tema.secundario : tema.borde,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.btnOrdenTexto,
+                        { color: activo ? tema.secundario : tema.textoSuave, fontSize: fs(12) },
+                      ]}
+                    >
+                      {op.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <View style={[styles.barraEstadoCatalogo, { borderTopColor: tema.borde }]}>
+              <Text style={[styles.barraEstadoCatalogoTexto, { color: tema.textoSuave, fontSize: fs(11) }]}>
+                Mostrando {productosVisibles.length} de {productos.length} suministros
+                {marcaSeleccionada !== 'Todas' ? ` · Marca: ${marcaSeleccionada}` : ''}
+                {soloDisponibles ? ' · Con stock' : ''}
               </Text>
             </View>
           </View>
         }
         ListEmptyComponent={
-          // HU03-CA03 y HU04-CA03: Mensaje exacto "No encontramos productos"
-          <View style={styles.estadoVacioBox}>
+          <View
+            style={[
+              styles.estadoVacioBox,
+              { backgroundColor: tema.tarjeta, borderColor: tema.borde },
+            ]}
+          >
             <Text style={styles.estadoVacioIcono}>🛰️</Text>
-            <Text style={styles.estadoVacioTitulo}>
+            <Text style={[styles.estadoVacioTitulo, { color: tema.textoPrincipal, fontSize: fs(18) }]}>
               No encontramos productos
             </Text>
-            <Text style={styles.estadoVacioSubtitulo}>
-              Ningún suministro del arsenal coincide con la búsqueda{' '}
-              {busqueda ? `"${busqueda}"` : ''} en la categoría seleccionada (
-              {categoriaSeleccionada}).
+            <Text style={[styles.estadoVacioSubtitulo, { color: tema.textoSuave, fontSize: fs(13) }]}>
+              Ningún suministro coincide con la combinación actual de búsqueda y filtros. Prueba ajustarlos o presiona Restablecer.
             </Text>
             <Pressable
-              onPress={() => {
-                setBusqueda('');
-                setCategoriaSeleccionada('Todas');
-                setOrdenPrecio('ninguno');
-              }}
-              style={styles.btnAccionVacio}
+              onPress={restablecerFiltrosCatalogo}
+              style={[
+                styles.btnAccionVacio,
+                { backgroundColor: tema.primarioBoton, borderColor: tema.primario },
+              ]}
             >
-              <Text style={styles.btnAccionVacioTexto}>
-                🔄 Restablecer filtros y ver todo el catálogo
+              <Text style={[styles.btnAccionVacioTexto, { fontSize: fs(13) }]}>
+                🔄 Restablecer filtros
               </Text>
             </Pressable>
           </View>
@@ -1088,49 +1655,104 @@ export default function App() {
     );
   };
 
-  // VISTA 2: DETALLE DEL PRODUCTO + RESEÑAS FICTICIAS (HU07, HU19)
+  // VISTA 2: DETALLE (HU07, HU19, HU21, HU24, HU30, HU31, HU35)
   const renderVistaDetalle = () => {
     if (!productoDetalle) return null;
 
     const esFavorito = favoritos.includes(productoDetalle.id);
-    const enCarrito = obtenerCantidadEnCarrito(productoDetalle.id);
-    const agotado = productoDetalle.stock <= 0;
+    const enComparador = comparacion.includes(productoDetalle.id);
+    const variantes = Array.isArray(productoDetalle.variantes) ? productoDetalle.variantes : [];
+    const multiVar = tieneMultiplesVariantes(productoDetalle);
+    const varianteActiva = obtenerVarianteProducto(productoDetalle, varianteSeleccionadaId);
+    const stockGlobal = obtenerStockProducto(productoDetalle);
+    const precioMostrado = varianteActiva ? varianteActiva.precio : productoDetalle.precio;
+    const stockMostrado = varianteActiva ? varianteActiva.stock : stockGlobal;
+    const agotadoMostrado = stockMostrado <= 0;
+
+    const enCarritoTotal = obtenerUnidadesProductoEnCarrito(productoDetalle.id);
     const infoEstrellas = calcularPromedioEstrellas(productoDetalle.resenas);
     const configCat =
-      CATEGORIAS_CONFIG[productoDetalle.categoria] ||
-      CATEGORIAS_CONFIG['Armaduras Mjolnir'];
+      CATEGORIAS_CONFIG[productoDetalle.categoria] || CATEGORIAS_CONFIG['Armaduras Mjolnir'];
+
+    const preguntasProducto = consultas.filter((c) => c.productoId === productoDetalle.id);
+    const recomendaciones = obtenerRecomendacionesRelacionadas(
+      productoDetalle,
+      productos,
+      REGLAS_V2.MAX_RECOMENDACIONES
+    );
+
+    const varianteParaReposicion =
+      varianteActiva && varianteActiva.stock === 0
+        ? varianteActiva
+        : variantes.find((v) => v.stock === 0) || null;
+
+    const suscritoReposicion = varianteParaReposicion
+      ? suscripcionesReposicion.some(
+          (s) =>
+            s.productoId === productoDetalle.id &&
+            s.varianteId === varianteParaReposicion.id &&
+            s.activa
+        )
+      : false;
 
     return (
       <ScrollView contentContainerStyle={styles.scrollVistaContenedor}>
-        {/* Botón Volver (HU02-CA03 y HU07-CA03) */}
         <View style={styles.detalleTopBar}>
-          <Pressable onPress={volverDeDetalle} style={styles.btnVolver}>
-            <Text style={styles.btnVolverTexto}>
-              ← Volver a {vistaAnterior === 'favoritos' ? 'Favoritos' : 'Catálogo'}
+          <Pressable
+            onPress={volverDeDetalle}
+            style={[styles.btnVolver, { backgroundColor: tema.superficie, borderColor: tema.info }]}
+          >
+            <Text style={[styles.btnVolverTexto, { color: tema.info, fontSize: fs(13) }]}>
+              ← Volver
             </Text>
           </Pressable>
 
-          <Pressable
-            onPress={() => alternarFavorito(productoDetalle)}
-            style={[
-              styles.btnFavoritoDetalle,
-              esFavorito && styles.btnFavoritoIconoActivo,
-            ]}
-          >
-            <Text style={styles.btnFavoritoTexto}>
-              {esFavorito ? '★ En Favoritos' : '☆ Guardar Favorito'}
-            </Text>
-          </Pressable>
+          <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
+            <Pressable
+              onPress={() => manejarToggleComparar(productoDetalle)}
+              style={[
+                styles.btnFavoritoDetalle,
+                {
+                  backgroundColor: enComparador ? tema.infoFondo : tema.superficie,
+                  borderColor: enComparador ? tema.info : tema.borde,
+                },
+              ]}
+            >
+              <Text style={[styles.btnFavoritoTexto, { color: tema.info, fontSize: fs(12) }]}>
+                {enComparador ? '✓ Comparando' : '⚖️ Comparar'}
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => alternarFavorito(productoDetalle)}
+              style={[
+                styles.btnFavoritoDetalle,
+                {
+                  backgroundColor: esFavorito ? tema.secundarioFondo : tema.superficie,
+                  borderColor: esFavorito ? tema.secundario : tema.borde,
+                },
+              ]}
+            >
+              <Text style={[styles.btnFavoritoTexto, { fontSize: fs(12) }]}>
+                {esFavorito ? '★ Favorito' : '☆ Favorito'}
+              </Text>
+            </Pressable>
+          </View>
         </View>
 
-        {/* Ficha Principal del Producto con IMAGEN OFICIAL GRANDE (HU07-CA01) */}
-        <View style={styles.detalleCard}>
+        {/* Ficha Principal */}
+        <View
+          style={[
+            styles.detalleCard,
+            { backgroundColor: tema.tarjeta, borderColor: tema.borde },
+          ]}
+        >
           <View
             style={[
               styles.detalleHeroBanner,
               {
-                backgroundColor:
-                  productoDetalle.colorTarjeta || configCat.colorFondo,
+                backgroundColor: productoDetalle.colorTarjeta || configCat.colorFondo,
+                borderBottomColor: tema.borde,
               },
             ]}
           >
@@ -1141,112 +1763,522 @@ export default function App() {
                 resizeMode="contain"
               />
             </View>
-            <Text
-              style={[
-                styles.detalleInsigniaCodigo,
-                { color: configCat.colorAcento },
-              ]}
-            >
-              CÓDIGO UNSC: {productoDetalle.id} · {productoDetalle.insignia}
+            <Text style={[styles.detalleInsigniaCodigo, { color: configCat.colorAcento, fontSize: fs(12) }]}>
+              {productoDetalle.id} · {productoDetalle.marca || 'Materials Group UNSC'}
             </Text>
-            <Text style={styles.detalleCategoriaTexto}>
+            <Text style={[styles.detalleCategoriaTexto, { fontSize: fs(13) }]}>
               Categoría: {productoDetalle.categoria}
             </Text>
           </View>
 
           <View style={styles.detalleContenido}>
-            <Text style={styles.detalleTitulo}>{productoDetalle.nombre}</Text>
+            <Text style={[styles.detalleTitulo, { color: tema.textoPrincipal, fontSize: fs(20) }]}>
+              {productoDetalle.nombre}
+            </Text>
 
             <View style={styles.detalleMetricasRow}>
-              <View style={styles.detalleMetricaCaja}>
-                <Text style={styles.detalleMetricaLabel}>PRECIO UNITARIO</Text>
-                <Text style={styles.detallePrecioValor}>
-                  {formatearCOP(productoDetalle.precio)} COP
+              <View
+                style={[
+                  styles.detalleMetricaCaja,
+                  { backgroundColor: tema.tarjetaSecundaria, borderColor: tema.borde },
+                ]}
+              >
+                <Text style={[styles.detalleMetricaLabel, { color: tema.textoSuave, fontSize: fs(9) }]}>
+                  {varianteActiva ? 'PRECIO VARIANTE' : 'PRECIO BASE'}
+                </Text>
+                <Text style={[styles.detallePrecioValor, { color: tema.primario, fontSize: fs(14) }]}>
+                  {formatearCOP(precioMostrado)} COP
                 </Text>
               </View>
 
-              <View style={styles.detalleMetricaCaja}>
-                <Text style={styles.detalleMetricaLabel}>DISPONIBILIDAD</Text>
+              <View
+                style={[
+                  styles.detalleMetricaCaja,
+                  { backgroundColor: tema.tarjetaSecundaria, borderColor: tema.borde },
+                ]}
+              >
+                <Text style={[styles.detalleMetricaLabel, { color: tema.textoSuave, fontSize: fs(9) }]}>
+                  {varianteActiva ? 'STOCK VARIANTE' : 'STOCK TOTAL'}
+                </Text>
                 <Text
                   style={[
                     styles.detalleStockValor,
-                    agotado ? styles.textoRojo : styles.textoVerde,
+                    { color: agotadoMostrado ? tema.error : tema.primario, fontSize: fs(13) },
                   ]}
                 >
-                  {agotado
-                    ? 'AGOTADO (0 uds.)'
-                    : `${productoDetalle.stock} unidades`}
+                  {agotadoMostrado ? 'AGOTADO (0)' : `${stockMostrado} uds.`}
                 </Text>
               </View>
 
-              <View style={styles.detalleMetricaCaja}>
-                <Text style={styles.detalleMetricaLabel}>VALORACIÓN PROMEDIO</Text>
-                <Text style={styles.detalleEstrellasValor}>
+              <View
+                style={[
+                  styles.detalleMetricaCaja,
+                  { backgroundColor: tema.tarjetaSecundaria, borderColor: tema.borde },
+                ]}
+              >
+                <Text style={[styles.detalleMetricaLabel, { color: tema.textoSuave, fontSize: fs(9) }]}>
+                  VALORACIÓN
+                </Text>
+                <Text style={[styles.detalleEstrellasValor, { color: tema.secundario, fontSize: fs(13) }]}>
                   {infoEstrellas.texto}
                 </Text>
               </View>
             </View>
 
-            <Text style={styles.detalleSeccionLabel}>
-              DESCRIPCIÓN TÁCTICA DEL SUMINISTRO
+            {/* HU21 · Selector de Variantes */}
+            <View
+              style={[
+                styles.variantesPanel,
+                { backgroundColor: tema.tarjetaSecundaria, borderColor: tema.borde },
+              ]}
+            >
+              <Text style={[styles.detalleSeccionLabel, { color: tema.secundario, fontSize: fs(11) }]}>
+                {multiVar
+                  ? '🔀 ELIGE UNA VARIANTE OBLIGATORIA (HU21):'
+                  : '📦 PRESENTACIÓN ÚNICA:'}
+              </Text>
+
+              <View style={styles.variantesWrap}>
+                {variantes.map((v) => {
+                  const sel = varianteSeleccionadaId === v.id;
+                  const sinStock = v.stock <= 0;
+                  return (
+                    <Pressable
+                      key={v.id}
+                      onPress={() => {
+                        setVarianteSeleccionadaId(v.id);
+                        setCantidadDetalle(1);
+                      }}
+                      style={[
+                        styles.chipVariante,
+                        {
+                          backgroundColor: sel
+                            ? tema.primarioFondo
+                            : sinStock
+                            ? tema.errorFondo
+                            : tema.superficie,
+                          borderColor: sel
+                            ? tema.primario
+                            : sinStock
+                            ? tema.error
+                            : tema.borde,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.chipVarianteTitulo,
+                          {
+                            color: sel
+                              ? tema.primario
+                              : sinStock
+                              ? tema.error
+                              : tema.textoPrincipal,
+                            fontSize: fs(12),
+                          },
+                        ]}
+                      >
+                        {sel ? '✓ ' : ''}
+                        {v.etiqueta}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.chipVarianteMeta,
+                          { color: tema.textoSecundario, fontSize: fs(11) },
+                        ]}
+                      >
+                        {formatearCOP(v.precio)} · {sinStock ? 'Agotado (0)' : `Stock: ${v.stock}`}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              {multiVar && !varianteActiva && (
+                <Text style={[styles.avisoElegirVariante, { color: tema.secundario, fontSize: fs(12) }]}>
+                  ⚠️ Selecciona una talla, color o edición para ver su stock específico y habilitar la compra.
+                </Text>
+              )}
+
+              {/* Selector de cantidad en detalle para probar HU21-CA03 y CA04 */}
+              <View style={styles.cantidadDetalleRow}>
+                <Text style={[styles.cantidadDetalleLabel, { color: tema.textoSecundario, fontSize: fs(12) }]}>
+                  Cantidad a agregar:
+                </Text>
+                <View style={styles.cantidadControlesGroup}>
+                  <Pressable
+                    onPress={() => setCantidadDetalle((q) => Math.max(1, q - 1))}
+                    style={[styles.btnCantidad, { backgroundColor: tema.superficie, borderColor: tema.info }]}
+                  >
+                    <Text style={[styles.btnCantidadTexto, { color: tema.info }]}>−</Text>
+                  </Pressable>
+                  <View style={styles.cantidadValorBox}>
+                    <Text style={[styles.cantidadValorTexto, { color: tema.textoPrincipal, fontSize: fs(15) }]}>
+                      {cantidadDetalle}
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={() => setCantidadDetalle((q) => q + 1)}
+                    style={[styles.btnCantidad, { backgroundColor: tema.superficie, borderColor: tema.info }]}
+                  >
+                    <Text style={[styles.btnCantidadTexto, { color: tema.info }]}>+</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+
+            <Text style={[styles.detalleSeccionLabel, { color: tema.textoSuave, fontSize: fs(11) }]}>
+              DESCRIPCIÓN DEL PRODUCTO
             </Text>
-            <Text style={styles.detalleDescripcionTexto}>
+            <Text style={[styles.detalleDescripcionTexto, { color: tema.textoSecundario, fontSize: fs(14) }]}>
               {productoDetalle.descripcion}
             </Text>
 
             {productoDetalle.especificaciones && (
-              <View style={styles.detalleSpecsBox}>
-                <Text style={styles.detalleSpecsTitulo}>
-                  TELEMETRÍA Y ESPECIFICACIONES UNSC:
+              <View
+                style={[
+                  styles.detalleSpecsBox,
+                  { backgroundColor: tema.tarjetaSecundaria, borderLeftColor: tema.secundario },
+                ]}
+              >
+                <Text style={[styles.detalleSpecsTitulo, { color: tema.secundario, fontSize: fs(11) }]}>
+                  ESPECIFICACIONES:
                 </Text>
-                <Text style={styles.detalleSpecsTexto}>
+                <Text style={[styles.detalleSpecsTexto, { color: tema.textoSecundario, fontSize: fs(12) }]}>
                   {productoDetalle.especificaciones}
                 </Text>
               </View>
             )}
 
-            {enCarrito > 0 && (
-              <View style={styles.indicadorEnCarrito}>
-                <Text style={styles.indicadorEnCarritoTexto}>
-                  🛒 Actualmente tienes {enCarrito} unidad(es) de este artículo en tu carrito.
+            {enCarritoTotal > 0 && (
+              <View
+                style={[
+                  styles.indicadorEnCarrito,
+                  { backgroundColor: tema.infoFondo, borderColor: tema.info },
+                ]}
+              >
+                <Text style={[styles.indicadorEnCarritoTexto, { color: tema.info, fontSize: fs(12) }]}>
+                  🛒 En carrito: {enCarritoTotal} unidad(es) de este producto.
                 </Text>
               </View>
             )}
 
-            {/* HU07-CA02: Si tiene stock 0 aparece agotado y no permite agregar unidades */}
             <Pressable
-              onPress={() => agregarAlCarrito(productoDetalle)}
+              onPress={() =>
+                agregarAlCarritoConVariante(
+                  productoDetalle,
+                  varianteSeleccionadaId,
+                  cantidadDetalle
+                )
+              }
               style={[
                 styles.btnAgregarGrande,
-                agotado && styles.btnPrimarioCardAgotado,
+                {
+                  backgroundColor:
+                    varianteActiva && agotadoMostrado ? tema.errorFondo : tema.primarioBoton,
+                  borderColor:
+                    varianteActiva && agotadoMostrado ? tema.error : tema.primario,
+                },
               ]}
             >
               <Text
                 style={[
                   styles.btnAgregarGrandeTexto,
-                  agotado && styles.btnPrimarioCardTextoAgotado,
+                  {
+                    color: varianteActiva && agotadoMostrado ? tema.error : '#F8FAFC',
+                    fontSize: fs(13),
+                  },
                 ]}
               >
-                {agotado
-                  ? '🚫 PRODUCTO AGOTADO · NO DISPONIBLE PARA AGREGAR'
-                  : '➕ AGREGAR 1 UNIDAD AL CARRITO DE SUMINISTROS'}
+                {multiVar && !varianteActiva
+                  ? '🔀 ELIGE UNA VARIANTE ARRIBA PARA AGREGAR'
+                  : agotadoMostrado
+                  ? '🚫 VARIANTE AGOTADA · NO DISPONIBLE PARA COMPRA'
+                  : `➕ AGREGAR ${cantidadDetalle} UNIDAD(ES) AL CARRITO`}
               </Text>
             </Pressable>
+
+            {/* HU35 · Compartir producto */}
+            <Pressable
+              onPress={() => manejarCompartirProducto(productoDetalle, varianteActiva)}
+              style={[
+                styles.btnCompartir,
+                { backgroundColor: tema.infoFondo, borderColor: tema.info },
+              ]}
+            >
+              <Text style={[styles.btnCompartirTxt, { color: tema.info, fontSize: fs(12) }]}>
+                📤 Compartir resumen del producto (HU35)
+              </Text>
+            </Pressable>
+
+            {textoCompartirVisible ? (
+              <View
+                style={[
+                  styles.cajaCompartirPreview,
+                  { backgroundColor: tema.tarjetaSecundaria, borderColor: tema.info },
+                ]}
+              >
+                <Text style={[styles.cajaCompartirTitulo, { color: tema.info, fontSize: fs(11) }]}>
+                  MENSAJE LISTO PARA COMPARTIR (SIN ENLACE PÚBLICO REAL):
+                </Text>
+                <Text style={[styles.cajaCompartirTexto, { color: tema.textoPrincipal, fontSize: fs(12) }]}>
+                  {textoCompartirVisible}
+                </Text>
+              </View>
+            ) : null}
+
+            {/* HU30 · Avisos de reposición y simulación de stock en agotados */}
+            {varianteParaReposicion && (
+              <View
+                style={[
+                  styles.reposicionBox,
+                  { backgroundColor: tema.secundarioFondo, borderColor: tema.secundario },
+                ]}
+              >
+                <Text style={[styles.reposicionTitulo, { color: tema.secundario, fontSize: fs(12) }]}>
+                  🔔 AVISO DE REPOSICIÓN PARA VARIANTE AGOTADA (HU30)
+                </Text>
+                <Text style={[styles.reposicionSub, { color: tema.textoSecundario, fontSize: fs(12) }]}>
+                  Variante agotada: {varianteParaReposicion.etiqueta} (Stock: 0)
+                </Text>
+
+                <View style={styles.reposicionBtnsRow}>
+                  <Pressable
+                    onPress={() =>
+                      manejarToggleSuscripcionStock(productoDetalle, varianteParaReposicion)
+                    }
+                    style={[
+                      styles.btnSuscripcion,
+                      {
+                        backgroundColor: suscritoReposicion
+                          ? tema.errorFondo
+                          : tema.primarioBoton,
+                        borderColor: suscritoReposicion ? tema.error : tema.primario,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.btnSuscripcionTxt,
+                        { color: suscritoReposicion ? tema.error : '#F8FAFC', fontSize: fs(12) },
+                      ]}
+                    >
+                      {suscritoReposicion
+                        ? '🔕 Cancelar aviso de reposición'
+                        : '🔔 Avisarme cuando haya stock'}
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={() =>
+                      manejarSimularReposicion(productoDetalle, varianteParaReposicion)
+                    }
+                    style={[
+                      styles.btnSimularRepo,
+                      { backgroundColor: tema.infoFondo, borderColor: tema.info },
+                    ]}
+                  >
+                    <Text style={[styles.btnSimularRepoTxt, { color: tema.info, fontSize: fs(12) }]}>
+                      🧪 Simular reposición (+{REGLAS_V2.UNIDADES_REPOSICION_DEMO} uds.)
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
           </View>
         </View>
 
-        {/* SECCIÓN HU19: RESEÑAS FICTICIAS Y CALIFICACIÓN CON ESTRELLAS */}
-        <View style={styles.resenasPanel}>
-          <Text style={styles.resenasTitulo}>
+        {/* HU24 · Preguntas frecuentes del producto */}
+        <View
+          style={[
+            styles.resenasPanel,
+            { backgroundColor: tema.tarjeta, borderColor: tema.borde, marginBottom: 16 },
+          ]}
+        >
+          <Text style={[styles.resenasTitulo, { color: tema.info, fontSize: fs(14) }]}>
+            ❓ PREGUNTAS SOBRE ESTE PRODUCTO (HU24)
+          </Text>
+          <Text style={[styles.resenasPromedioSub, { color: tema.textoSuave, fontSize: fs(12) }]}>
+            Formula dudas antes de comprar (mín. {REGLAS_V2.MIN_CHARS_PREGUNTA} caracteres). Las respuestas son simulaciones académicas.
+          </Text>
+
+          <TextInput
+            style={[
+              styles.inputCampo,
+              {
+                backgroundColor: tema.inputFondo,
+                color: tema.textoPrincipal,
+                borderColor: tema.borde,
+                fontSize: fs(13),
+              },
+            ]}
+            value={preguntaInput}
+            onChangeText={setPreguntaInput}
+            placeholder="Escribe tu pregunta sobre este artículo..."
+            placeholderTextColor={tema.placeholder}
+          />
+
+          <Pressable
+            onPress={() => manejarEnviarPregunta(productoDetalle.id)}
+            style={[
+              styles.btnGuardarResena,
+              { backgroundColor: tema.infoFondo, borderColor: tema.info },
+            ]}
+          >
+            <Text style={[styles.btnGuardarResenaTexto, { color: tema.info, fontSize: fs(13) }]}>
+              📩 Enviar pregunta
+            </Text>
+          </Pressable>
+
+          {preguntasProducto.length === 0 ? (
+            <Text style={[styles.vacioSuaveTxt, { color: tema.textoSuave, fontSize: fs(12) }]}>
+              Aún no hay preguntas para este producto. Sé el primero en preguntar.
+            </Text>
+          ) : (
+            preguntasProducto.map((preg) => {
+              const pendiente = preg.estado === 'Pendiente';
+              return (
+                <View
+                  key={preg.id}
+                  style={[
+                    styles.resenaItemCard,
+                    { backgroundColor: tema.tarjetaSecundaria, borderColor: tema.borde },
+                  ]}
+                >
+                  <View style={styles.resenaItemHeader}>
+                    <Text style={[styles.resenaItemAutor, { color: tema.textoSuave, fontSize: fs(11) }]}>
+                      🕒 {preg.fecha}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.resenaItemEstrellas,
+                        { color: pendiente ? tema.secundario : tema.primario, fontSize: fs(11) },
+                      ]}
+                    >
+                      {preg.estado.toUpperCase()}
+                    </Text>
+                  </View>
+                  <Text
+                    style={[
+                      styles.resenaItemComentario,
+                      { color: tema.textoPrincipal, fontSize: fs(13), fontWeight: '700' },
+                    ]}
+                  >
+                    P: {preg.pregunta}
+                  </Text>
+
+                  {preg.respuestaSimulada ? (
+                    <Text
+                      style={[
+                        styles.respuestaSimuladaPregunta,
+                        { color: tema.primario, fontSize: fs(12) },
+                      ]}
+                    >
+                      {preg.respuestaSimulada}
+                    </Text>
+                  ) : null}
+
+                  {pendiente && (
+                    <Pressable
+                      onPress={() => manejarSimularRespuestaPregunta(preg.id, productoDetalle)}
+                      style={[
+                        styles.btnSimularRespuestaPreg,
+                        { backgroundColor: tema.secundarioFondo, borderColor: tema.secundario },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.btnSimularRespuestaPregTxt,
+                          { color: tema.secundario, fontSize: fs(11) },
+                        ]}
+                      >
+                        🧪 Simular respuesta (Demo)
+                      </Text>
+                    </Pressable>
+                  )}
+                </View>
+              );
+            })
+          )}
+        </View>
+
+        {/* HU31 · Productos relacionados */}
+        <View
+          style={[
+            styles.resenasPanel,
+            { backgroundColor: tema.tarjeta, borderColor: tema.borde, marginBottom: 16 },
+          ]}
+        >
+          <Text style={[styles.resenasTitulo, { color: tema.primario, fontSize: fs(14) }]}>
+            ✨ PRODUCTOS RELACIONADOS EN {productoDetalle.categoria.toUpperCase()} (HU31)
+          </Text>
+          <Text style={[styles.resenasPromedioSub, { color: tema.textoSuave, fontSize: fs(12) }]}>
+            Hasta 4 alternativas de la misma categoría con stock disponible.
+          </Text>
+
+          {recomendaciones.length === 0 ? (
+            <View
+              style={[
+                styles.estadoVacioBox,
+                { backgroundColor: tema.tarjetaSecundaria, borderColor: tema.borde, padding: 14 },
+              ]}
+            >
+              <Text style={[styles.estadoVacioSubtitulo, { color: tema.textoSuave, fontSize: fs(12), marginBottom: 0 }]}>
+                No hay otros productos disponibles en esta categoría para recomendar en este momento.
+              </Text>
+            </View>
+          ) : (
+            recomendaciones.map((rec) => (
+              <Pressable
+                key={rec.id}
+                onPress={() => abrirDetalleProducto(rec.id)}
+                style={[
+                  styles.recomendacionRow,
+                  { backgroundColor: tema.tarjetaSecundaria, borderColor: tema.borde },
+                ]}
+              >
+                <View style={styles.miniaturaWrapper}>
+                  <Image
+                    source={obtenerFuenteImagen(rec)}
+                    style={styles.miniaturaImagen}
+                    resizeMode="contain"
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={[
+                      styles.recomendacionNombre,
+                      { color: tema.textoPrincipal, fontSize: fs(13) },
+                    ]}
+                  >
+                    {rec.nombre}
+                  </Text>
+                  <Text style={[styles.recomendacionMeta, { color: tema.primario, fontSize: fs(12) }]}>
+                    {formatearCOP(rec.precio)} COP · {rec.variantesDisponibles.length} variante(s) con stock
+                  </Text>
+                </View>
+                <Text style={{ color: tema.info, fontWeight: '800', fontSize: fs(12) }}>
+                  Ver →
+                </Text>
+              </Pressable>
+            ))
+          )}
+        </View>
+
+        {/* HU19 · Reseñas existentes conservadas */}
+        <View
+          style={[
+            styles.resenasPanel,
+            { backgroundColor: tema.tarjeta, borderColor: tema.borde },
+          ]}
+        >
+          <Text style={[styles.resenasTitulo, { color: tema.secundario, fontSize: fs(14) }]}>
             ★ BITÁCORA DE RESEÑAS Y VALORACIONES (HU19)
           </Text>
-          <Text style={styles.resenasPromedioSub}>
+          <Text style={[styles.resenasPromedioSub, { color: tema.textoSecundario, fontSize: fs(12) }]}>
             Promedio calculado: {infoEstrellas.texto}
           </Text>
 
-          <Text style={styles.inputLabel}>
-            Selecciona o escribe una calificación entera entre 1 y 5 estrellas:
-          </Text>
           <View style={styles.estrellasBotonesRow}>
             {[1, 2, 3, 4, 5].map((num) => {
               const seleccionada = Number(resenaEstrellasInput) === num;
@@ -1256,13 +2288,16 @@ export default function App() {
                   onPress={() => setResenaEstrellasInput(String(num))}
                   style={[
                     styles.btnEstrellaOpcion,
-                    seleccionada && styles.btnEstrellaOpcionActiva,
+                    {
+                      backgroundColor: seleccionada ? tema.secundarioFondo : tema.superficie,
+                      borderColor: seleccionada ? tema.secundario : tema.borde,
+                    },
                   ]}
                 >
                   <Text
                     style={[
                       styles.btnEstrellaOpcionTexto,
-                      seleccionada && styles.btnEstrellaOpcionTextoActivo,
+                      { color: seleccionada ? tema.secundario : tema.textoSuave, fontSize: fs(12) },
                     ]}
                   >
                     {num} ★
@@ -1274,572 +2309,1024 @@ export default function App() {
 
           <View style={styles.resenaInputsRow}>
             <View style={{ flex: 1, marginRight: 8 }}>
-              <Text style={styles.inputLabel}>Valor numérico (1 a 5):</Text>
+              <Text style={[styles.inputLabel, { color: tema.textoSecundario, fontSize: fs(12) }]}>
+                Valor (1 a 5):
+              </Text>
               <TextInput
-                style={styles.inputCampo}
+                style={[
+                  styles.inputCampo,
+                  {
+                    backgroundColor: tema.inputFondo,
+                    color: tema.textoPrincipal,
+                    borderColor: tema.borde,
+                    fontSize: fs(13),
+                  },
+                ]}
                 value={resenaEstrellasInput}
                 onChangeText={setResenaEstrellasInput}
                 keyboardType="numeric"
-                placeholder="1 - 5"
-                placeholderTextColor="#64748B"
               />
             </View>
             <View style={{ flex: 2 }}>
-              <Text style={styles.inputLabel}>Indicativo / Autor (opcional):</Text>
+              <Text style={[styles.inputLabel, { color: tema.textoSecundario, fontSize: fs(12) }]}>
+                Autor (opcional):
+              </Text>
               <TextInput
-                style={styles.inputCampo}
+                style={[
+                  styles.inputCampo,
+                  {
+                    backgroundColor: tema.inputFondo,
+                    color: tema.textoPrincipal,
+                    borderColor: tema.borde,
+                    fontSize: fs(13),
+                  },
+                ]}
                 value={resenaAutorInput}
                 onChangeText={setResenaAutorInput}
                 placeholder="Ej. Spartan-117"
-                placeholderTextColor="#64748B"
+                placeholderTextColor={tema.placeholder}
               />
             </View>
           </View>
 
-          <Text style={styles.inputLabel}>Comentario táctico (opcional):</Text>
+          <Text style={[styles.inputLabel, { color: tema.textoSecundario, fontSize: fs(12) }]}>
+            Comentario (opcional):
+          </Text>
           <TextInput
-            style={styles.inputCampo}
+            style={[
+              styles.inputCampo,
+              {
+                backgroundColor: tema.inputFondo,
+                color: tema.textoPrincipal,
+                borderColor: tema.borde,
+                fontSize: fs(13),
+              },
+            ]}
             value={resenaComentarioInput}
             onChangeText={setResenaComentarioInput}
-            placeholder="Escribe tu evaluación del equipamiento..."
-            placeholderTextColor="#64748B"
+            placeholder="Evaluación del artículo..."
+            placeholderTextColor={tema.placeholder}
           />
 
           <Pressable
             onPress={() => registrarResenaProducto(productoDetalle.id)}
-            style={styles.btnGuardarResena}
+            style={[
+              styles.btnGuardarResena,
+              { backgroundColor: tema.infoFondo, borderColor: tema.info },
+            ]}
           >
-            <Text style={styles.btnGuardarResenaTexto}>
-              💾 Registrar valoración en el producto
+            <Text style={[styles.btnGuardarResenaTexto, { color: tema.info, fontSize: fs(13) }]}>
+              💾 Registrar valoración
             </Text>
           </Pressable>
 
-          {/* Lista de reseñas registradas */}
-          <View style={styles.listaResenasBox}>
-            {(productoDetalle.resenas || []).map((rev) => (
-              <View key={rev.id} style={styles.resenaItemCard}>
-                <View style={styles.resenaItemHeader}>
-                  <Text style={styles.resenaItemAutor}>🪖 {rev.autor}</Text>
-                  <Text style={styles.resenaItemEstrellas}>
-                    {'★'.repeat(rev.estrellas)}
-                    {'☆'.repeat(Math.max(0, 5 - rev.estrellas))} ({rev.estrellas}/5)
-                  </Text>
-                </View>
-                <Text style={styles.resenaItemComentario}>{rev.comentario}</Text>
+          {(productoDetalle.resenas || []).map((rev) => (
+            <View
+              key={rev.id}
+              style={[
+                styles.resenaItemCard,
+                { backgroundColor: tema.tarjetaSecundaria, borderColor: tema.borde },
+              ]}
+            >
+              <View style={styles.resenaItemHeader}>
+                <Text style={[styles.resenaItemAutor, { color: tema.primario, fontSize: fs(12) }]}>
+                  🪖 {rev.autor}
+                </Text>
+                <Text style={[styles.resenaItemEstrellas, { color: tema.secundario, fontSize: fs(12) }]}>
+                  {'★'.repeat(rev.estrellas)}
+                  {'☆'.repeat(Math.max(0, 5 - rev.estrellas))} ({rev.estrellas}/5)
+                </Text>
               </View>
-            ))}
-          </View>
+              <Text style={[styles.resenaItemComentario, { color: tema.textoSecundario, fontSize: fs(12) }]}>
+                {rev.comentario}
+              </Text>
+            </View>
+          ))}
         </View>
       </ScrollView>
     );
   };
 
-  // VISTA 3: LISTA DE FAVORITOS (HU08)
-  const renderVistaFavoritos = () => {
-    return (
-      <FlatList
-        data={productosFavoritos}
-        keyExtractor={(item) => item.id}
-        renderItem={renderTarjetaProducto}
-        contentContainerStyle={styles.listaContenedor}
-        ListHeaderComponent={
-          <View style={styles.encabezadoSeccionBox}>
-            <Text style={styles.encabezadoSeccionTitulo}>
-              ★ ARSENAL DE FAVORITOS GUARDADOS (HU08)
-            </Text>
-            <Text style={styles.encabezadoSeccionSub}>
-              Tienes {productosFavoritos.length} suministro(s) marcados como prioritarios.
-            </Text>
-          </View>
-        }
-        ListEmptyComponent={
-          // HU08-CA03: Mensaje de estado vacío y botón para volver al catálogo
-          <View style={styles.estadoVacioBox}>
-            <Text style={styles.estadoVacioIcono}>☆</Text>
-            <Text style={styles.estadoVacioTitulo}>
-              Tu lista de favoritos está vacía
-            </Text>
-            <Text style={styles.estadoVacioSubtitulo}>
-              Aún no has guardado armaduras Mjolnir, naves, armas ni vehículos en tu lista de favoritos.
-            </Text>
-            <Pressable
-              onPress={() => irAVista('catalogo')}
-              style={styles.btnAccionVacio}
-            >
-              <Text style={styles.btnAccionVacioTexto}>
-                🛡️ Volver al Catálogo de Suministros
-              </Text>
-            </Pressable>
-          </View>
-        }
-      />
-    );
-  };
-
-  // VISTA 4: CARRITO DE COMPRAS, RESUMEN, CUPÓN Y CHECKOUT (HU09 a HU17)
-  const renderVistaCarrito = () => {
-    const municipiosSugeridos = ['Mosquera', 'Madrid', 'Funza', 'Nueva Mombasa'];
-
-    return (
-      <ScrollView contentContainerStyle={styles.scrollVistaContenedor}>
-        <View style={styles.encabezadoSeccionBox}>
-          <Text style={styles.encabezadoSeccionTitulo}>
-            🛒 BAHÍA DE CARGA · CARRITO DE COMPRAS
+  // VISTA 3: FAVORITOS (HU08)
+  const renderVistaFavoritos = () => (
+    <FlatList
+      data={productosFavoritos}
+      keyExtractor={(item) => item.id}
+      renderItem={renderTarjetaProducto}
+      contentContainerStyle={styles.listaContenedor}
+      ListHeaderComponent={
+        <View
+          style={[
+            styles.encabezadoSeccionBox,
+            { backgroundColor: tema.tarjeta, borderLeftColor: tema.primario },
+          ]}
+        >
+          <Text style={[styles.encabezadoSeccionTitulo, { color: tema.textoPrincipal, fontSize: fs(15) }]}>
+            ★ ARSENAL DE FAVORITOS (HU08)
           </Text>
-          <Text style={styles.encabezadoSeccionSub}>
-            Ajusta cantidades, verifica costos de envío en COP y confirma tu pedido simulado.
+          <Text style={[styles.encabezadoSeccionSub, { color: tema.textoSuave, fontSize: fs(12) }]}>
+            Tienes {productosFavoritos.length} suministro(s) marcados como prioritarios.
           </Text>
         </View>
+      }
+      ListEmptyComponent={
+        <View
+          style={[
+            styles.estadoVacioBox,
+            { backgroundColor: tema.tarjeta, borderColor: tema.borde },
+          ]}
+        >
+          <Text style={styles.estadoVacioIcono}>☆</Text>
+          <Text style={[styles.estadoVacioTitulo, { color: tema.textoPrincipal, fontSize: fs(18) }]}>
+            Tu lista de favoritos está vacía
+          </Text>
+          <Text style={[styles.estadoVacioSubtitulo, { color: tema.textoSuave, fontSize: fs(13) }]}>
+            Marca productos con ★ desde el catálogo o su detalle.
+          </Text>
+          <Pressable
+            onPress={() => irAVista('catalogo')}
+            style={[
+              styles.btnAccionVacio,
+              { backgroundColor: tema.primarioBoton, borderColor: tema.primario },
+            ]}
+          >
+            <Text style={[styles.btnAccionVacioTexto, { fontSize: fs(13) }]}>
+              🛡️ Volver al Catálogo
+            </Text>
+          </Pressable>
+        </View>
+      }
+    />
+  );
 
-        {/* Confirmación destacada si acaba de realizar una compra (HU13-CA01 y CA04) */}
-        {ultimoPedidoConfirmado && (
-          <View style={styles.confirmacionPedidoBox}>
-            <Text style={styles.confirmacionPedidoTag}>
-              ✅ CONFIRMACIÓN DE COMPRA SIMULADA (HU13)
+  // VISTA 4: CARRITO, ENVÍO POR MUNICIPIO (HU26) Y CHECKOUT CON DIRECCIONES (HU25)
+  const renderVistaCarrito = () => (
+    <ScrollView contentContainerStyle={styles.scrollVistaContenedor}>
+      <View
+        style={[
+          styles.encabezadoSeccionBox,
+          { backgroundColor: tema.tarjeta, borderLeftColor: tema.primario },
+        ]}
+      >
+        <Text style={[styles.encabezadoSeccionTitulo, { color: tema.textoPrincipal, fontSize: fs(15) }]}>
+          🛒 CARRITO Y CHECKOUT 2.0 (HU21, HU25, HU26)
+        </Text>
+        <Text style={[styles.encabezadoSeccionSub, { color: tema.textoSuave, fontSize: fs(12) }]}>
+          Verifica variantes, selecciona dirección ficticia y modalidad de envío para calcular el total sin duplicar cargos.
+        </Text>
+      </View>
+
+      {ultimoPedidoConfirmado && (
+        <View
+          style={[
+            styles.confirmacionPedidoBox,
+            { backgroundColor: tema.primarioFondo, borderColor: tema.primario },
+          ]}
+        >
+          <Text style={[styles.confirmacionPedidoTag, { color: tema.primario, fontSize: fs(11) }]}>
+            ✅ PEDIDO CONFIRMADO EN MODO SIMULACIÓN
+          </Text>
+          <Text style={[styles.confirmacionPedidoCodigo, { color: tema.textoPrincipal, fontSize: fs(18) }]}>
+            {ultimoPedidoConfirmado.codigo}
+          </Text>
+          <Text style={[styles.confirmacionPedidoDetalle, { color: tema.textoSecundario, fontSize: fs(12) }]}>
+            Estado: {ultimoPedidoConfirmado.estado} · Destino: {ultimoPedidoConfirmado.comprador.municipio}
+          </Text>
+          <Text style={[styles.confirmacionPedidoTotal, { color: tema.secundario, fontSize: fs(16) }]}>
+            Total: {formatearCOP(ultimoPedidoConfirmado.total)} COP
+          </Text>
+          <Pressable
+            onPress={() => {
+              setPedidoDetalleCodigo(ultimoPedidoConfirmado.codigo);
+              irAVista('historial');
+            }}
+            style={[
+              styles.btnIrHistorialConfirm,
+              { backgroundColor: tema.tarjeta, borderColor: tema.primario },
+            ]}
+          >
+            <Text style={[styles.btnIrHistorialConfirmTexto, { color: tema.primario, fontSize: fs(12) }]}>
+              📜 Hacer seguimiento en Mis Pedidos →
             </Text>
-            <Text style={styles.confirmacionPedidoCodigo}>
-              Código Único: {ultimoPedidoConfirmado.codigo}
+          </Pressable>
+        </View>
+      )}
+
+      {carrito.length === 0 ? (
+        <View
+          style={[
+            styles.estadoVacioBox,
+            { backgroundColor: tema.tarjeta, borderColor: tema.borde },
+          ]}
+        >
+          <Text style={styles.estadoVacioIcono}>🛒</Text>
+          <Text style={[styles.estadoVacioTitulo, { color: tema.textoPrincipal, fontSize: fs(18) }]}>
+            El carrito está vacío
+          </Text>
+          <Text style={[styles.estadoVacioSubtitulo, { color: tema.textoSuave, fontSize: fs(13) }]}>
+            Agrega productos y variantes desde el catálogo para calcular envío y confirmar pedidos.
+          </Text>
+          <Pressable
+            onPress={() => irAVista('catalogo')}
+            style={[
+              styles.btnAccionVacio,
+              { backgroundColor: tema.primarioBoton, borderColor: tema.primario },
+            ]}
+          >
+            <Text style={[styles.btnAccionVacioTexto, { fontSize: fs(13) }]}>
+              🚀 Explorar Catálogo
             </Text>
-            <Text style={styles.confirmacionPedidoDetalle}>
-              Comprador: {ultimoPedidoConfirmado.comprador.nombre} · Municipio:{' '}
-              {ultimoPedidoConfirmado.comprador.municipio}
+          </Pressable>
+        </View>
+      ) : (
+        <View style={styles.listaCarritoBox}>
+          <View style={styles.listaCarritoHeaderRow}>
+            <Text style={[styles.seccionSubtitulo, { color: tema.textoSuave, fontSize: fs(11) }]}>
+              ÍTEMS EN EL CARRITO ({carrito.length})
             </Text>
-            <Text style={styles.confirmacionPedidoTotal}>
-              Total Registrado: {formatearCOP(ultimoPedidoConfirmado.total)} COP
-            </Text>
-            <Text style={styles.confirmacionPedidoAviso}>
-              {ultimoPedidoConfirmado.notaSimulacion}
-            </Text>
-            <Pressable
-              onPress={() => {
-                setPedidoDetalleCodigo(ultimoPedidoConfirmado.codigo);
-                irAVista('historial');
-              }}
-              style={styles.btnIrHistorialConfirm}
-            >
-              <Text style={styles.btnIrHistorialConfirmTexto}>
-                📜 Ver detalle del pedido en Historial →
+            <Pressable onPress={vaciarCarritoCompleto}>
+              <Text style={[styles.linkVaciarCarrito, { color: tema.error, fontSize: fs(12) }]}>
+                Vaciar todo
               </Text>
             </Pressable>
           </View>
-        )}
 
-        {/* Lista de ítems en el carrito o estado vacío */}
-        {carrito.length === 0 ? (
-          <View style={styles.estadoVacioBox}>
-            <Text style={styles.estadoVacioIcono}>🛒</Text>
-            <Text style={styles.estadoVacioTitulo}>
-              El carrito de suministros está vacío
-            </Text>
-            <Text style={styles.estadoVacioSubtitulo}>
-              Agrega armaduras Mjolnir, naves de la humanidad, armas o vehículos terrestres desde el catálogo para preparar tu pedido.
-            </Text>
-            <Pressable
-              onPress={() => irAVista('catalogo')}
-              style={styles.btnAccionVacio}
-            >
-              <Text style={styles.btnAccionVacioTexto}>
-                🚀 Explorar Catálogo de Suministros
-              </Text>
-            </Pressable>
-          </View>
-        ) : (
-          <View style={styles.listaCarritoBox}>
-            <View style={styles.listaCarritoHeaderRow}>
-              <Text style={styles.seccionSubtitulo}>
-                REFERENCIAS EN EL CARRITO ({carrito.length})
-              </Text>
-              <Pressable onPress={vaciarCarritoCompleto}>
-                <Text style={styles.linkVaciarCarrito}>Vaciar todo</Text>
-              </Pressable>
-            </View>
+          {carrito.map((item) => {
+            const prodCatalogo = productos.find((p) => p.id === (item.productoId || item.id));
+            const varCatalogo = obtenerVarianteProducto(prodCatalogo, item.varianteId);
+            const stockMax = varCatalogo ? varCatalogo.stock : item.cantidad;
+            const subtotalLinea = item.precio * item.cantidad;
 
-            {carrito.map((item) => {
-              const prodCatalogo = productos.find((p) => p.id === item.id);
-              const stockMax = prodCatalogo ? prodCatalogo.stock : item.cantidad;
-              const subtotalLinea = item.precio * item.cantidad;
-
-              return (
-                <View key={item.id} style={styles.carritoItemCard}>
-                  <View style={styles.carritoItemTop}>
-                    <View style={styles.miniaturaWrapper}>
-                      <Image
-                        source={obtenerFuenteImagen(prodCatalogo || item)}
-                        style={styles.miniaturaImagen}
-                        resizeMode="contain"
-                      />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.carritoItemNombre}>{item.nombre}</Text>
-                      <Text style={styles.carritoItemMeta}>
-                        {item.categoria} · Unitario: {formatearCOP(item.precio)} COP · Stock disponible: {stockMax}
-                      </Text>
-                    </View>
+            return (
+              <View
+                key={item.claveCarrito}
+                style={[
+                  styles.carritoItemCard,
+                  { backgroundColor: tema.tarjeta, borderColor: tema.borde },
+                ]}
+              >
+                <View style={styles.carritoItemTop}>
+                  <View style={styles.miniaturaWrapper}>
+                    <Image
+                      source={obtenerFuenteImagen(prodCatalogo || item)}
+                      style={styles.miniaturaImagen}
+                      resizeMode="contain"
+                    />
                   </View>
-
-                  <View style={styles.carritoItemControlesRow}>
-                    <View style={styles.cantidadControlesGroup}>
-                      <Pressable
-                        onPress={() => disminuirCantidadCarrito(item.id)}
-                        style={styles.btnCantidad}
-                      >
-                        <Text style={styles.btnCantidadTexto}>−</Text>
-                      </Pressable>
-
-                      <View style={styles.cantidadValorBox}>
-                        <Text style={styles.cantidadValorTexto}>
-                          {item.cantidad}
-                        </Text>
-                      </View>
-
-                      <Pressable
-                        onPress={() => aumentarCantidadCarrito(item.id)}
-                        style={styles.btnCantidad}
-                      >
-                        <Text style={styles.btnCantidadTexto}>+</Text>
-                      </Pressable>
-                    </View>
-
-                    <View style={styles.subtotalLineaBox}>
-                      <Text style={styles.subtotalLineaLabel}>Subtotal línea</Text>
-                      <Text style={styles.subtotalLineaValor}>
-                        {formatearCOP(subtotalLinea)} COP
-                      </Text>
-                    </View>
-
-                    <Pressable
-                      onPress={() => eliminarDelCarrito(item.id)}
-                      style={styles.btnEliminarItem}
-                    >
-                      <Text style={styles.btnEliminarItemTexto}>🗑 Eliminar</Text>
-                    </Pressable>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.carritoItemNombre, { color: tema.textoPrincipal, fontSize: fs(14) }]}>
+                      {item.nombre}
+                    </Text>
+                    <Text style={[styles.carritoVariantTag, { color: tema.info, fontSize: fs(12) }]}>
+                      Variante: {item.varianteEtiqueta || 'Estándar'}
+                    </Text>
+                    <Text style={[styles.carritoItemMeta, { color: tema.textoSuave, fontSize: fs(11) }]}>
+                      Unitario: {formatearCOP(item.precio)} COP · Stock variante: {stockMax}
+                    </Text>
                   </View>
                 </View>
-              );
-            })}
-          </View>
-        )}
 
-        {/* SECCIÓN HU17: CUPÓN PROMOCIONAL */}
-        <View style={styles.panelSeccionCard}>
-          <Text style={styles.panelSeccionTitulo}>
-            🎟️ CUPÓN PROMOCIONAL UNSC (HU17)
-          </Text>
-          <Text style={styles.panelSeccionAyuda}>
-            Código oficial de prueba: <Text style={styles.textoVerdeBold}>BIENVENIDO10</Text> (10% de descuento sobre el subtotal).
-          </Text>
+                <View style={[styles.carritoItemControlesRow, { borderTopColor: tema.borde }]}>
+                  <View style={styles.cantidadControlesGroup}>
+                    <Pressable
+                      onPress={() => disminuirCantidadCarrito(item.claveCarrito)}
+                      style={[styles.btnCantidad, { backgroundColor: tema.superficie, borderColor: tema.info }]}
+                    >
+                      <Text style={[styles.btnCantidadTexto, { color: tema.info }]}>−</Text>
+                    </Pressable>
+                    <View style={styles.cantidadValorBox}>
+                      <Text style={[styles.cantidadValorTexto, { color: tema.textoPrincipal, fontSize: fs(15) }]}>
+                        {item.cantidad}
+                      </Text>
+                    </View>
+                    <Pressable
+                      onPress={() => aumentarCantidadCarrito(item.claveCarrito)}
+                      style={[styles.btnCantidad, { backgroundColor: tema.superficie, borderColor: tema.info }]}
+                    >
+                      <Text style={[styles.btnCantidadTexto, { color: tema.info }]}>+</Text>
+                    </Pressable>
+                  </View>
 
-          <View style={styles.cuponRow}>
-            <TextInput
-              style={[styles.inputCampo, { flex: 1, marginBottom: 0, marginRight: 8 }]}
-              value={codigoCuponInput}
-              onChangeText={setCodigoCuponInput}
-              placeholder="Ingresa código (ej. BIENVENIDO10)"
-              placeholderTextColor="#64748B"
-              autoCapitalize="characters"
-            />
-            <Pressable onPress={aplicarCupon} style={styles.btnAplicarCupon}>
-              <Text style={styles.btnAplicarCuponTexto}>Aplicar</Text>
+                  <View style={styles.subtotalLineaBox}>
+                    <Text style={[styles.subtotalLineaLabel, { color: tema.textoSuave, fontSize: fs(10) }]}>
+                      Subtotal
+                    </Text>
+                    <Text style={[styles.subtotalLineaValor, { color: tema.primario, fontSize: fs(13) }]}>
+                      {formatearCOP(subtotalLinea)} COP
+                    </Text>
+                  </View>
+
+                  <Pressable
+                    onPress={() => eliminarDelCarrito(item.claveCarrito)}
+                    style={[styles.btnEliminarItem, { backgroundColor: tema.errorFondo, borderColor: tema.error }]}
+                  >
+                    <Text style={[styles.btnEliminarItemTexto, { color: tema.error, fontSize: fs(11) }]}>
+                      🗑 Eliminar
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      )}
+
+      {/* Cupón (HU17) */}
+      <View
+        style={[
+          styles.panelSeccionCard,
+          { backgroundColor: tema.tarjeta, borderColor: tema.borde },
+        ]}
+      >
+        <Text style={[styles.panelSeccionTitulo, { color: tema.secundario, fontSize: fs(13) }]}>
+          🎟️ CUPÓN PROMOCIONAL (HU17)
+        </Text>
+        <Text style={[styles.panelSeccionAyuda, { color: tema.textoSuave, fontSize: fs(12) }]}>
+          Código válido: BIENVENIDO10 (10% de descuento sobre el subtotal).
+        </Text>
+        <View style={styles.cuponRow}>
+          <TextInput
+            style={[
+              styles.inputCampo,
+              {
+                flex: 1,
+                marginBottom: 0,
+                marginRight: 8,
+                backgroundColor: tema.inputFondo,
+                color: tema.textoPrincipal,
+                borderColor: tema.borde,
+                fontSize: fs(13),
+              },
+            ]}
+            value={codigoCuponInput}
+            onChangeText={setCodigoCuponInput}
+            placeholder="BIENVENIDO10"
+            placeholderTextColor={tema.placeholder}
+            autoCapitalize="characters"
+          />
+          <Pressable
+            onPress={aplicarCupon}
+            style={[styles.btnAplicarCupon, { backgroundColor: tema.infoFondo, borderColor: tema.info }]}
+          >
+            <Text style={[styles.btnAplicarCuponTexto, { color: tema.info, fontSize: fs(13) }]}>
+              Aplicar
+            </Text>
+          </Pressable>
+        </View>
+        {cuponAplicado && (
+          <View
+            style={[
+              styles.cuponActivoBanner,
+              { backgroundColor: tema.primarioFondo, borderColor: tema.primario },
+            ]}
+          >
+            <Text style={[styles.cuponActivoTexto, { color: tema.primario, fontSize: fs(12) }]}>
+              ✅ {cuponAplicado} activo (-{formatearCOP(resumenCarrito.descuento)} COP)
+            </Text>
+            <Pressable onPress={quitarCupon}>
+              <Text style={[styles.linkQuitarCupon, { color: tema.error, fontSize: fs(12) }]}>
+                Quitar
+              </Text>
             </Pressable>
           </View>
+        )}
+      </View>
 
-          {cuponAplicado && (
-            <View style={styles.cuponActivoBanner}>
-              <Text style={styles.cuponActivoTexto}>
-                ✅ Cupón {cuponAplicado} activo (-10%: -{formatearCOP(resumenCarrito.descuento)} COP)
-              </Text>
-              <Pressable onPress={quitarCupon}>
-                <Text style={styles.linkQuitarCupon}>Quitar</Text>
-              </Pressable>
-            </View>
-          )}
+      {/* HU25 y HU26 · Selección de Dirección + Estimador de Envío */}
+      <View
+        style={[
+          styles.panelSeccionCard,
+          { backgroundColor: tema.tarjeta, borderColor: tema.borde },
+        ]}
+      >
+        <View style={styles.listaCarritoHeaderRow}>
+          <Text style={[styles.panelSeccionTitulo, { color: tema.secundario, fontSize: fs(13) }]}>
+            📍 DIRECCIÓN Y MODALIDAD DE ENVÍO (HU25 & HU26)
+          </Text>
+          <Pressable onPress={() => irAVista('direcciones')}>
+            <Text style={{ color: tema.info, fontWeight: '800', fontSize: fs(12) }}>
+              Gestionar →
+            </Text>
+          </Pressable>
         </View>
 
-        {/* SECCIÓN HU11: RESUMEN DE COMPRA Y ENVÍO */}
-        <View style={styles.panelSeccionCard}>
-          <Text style={styles.panelSeccionTitulo}>
-            📊 RESUMEN DE COMPRA Y ENVÍO (HU11)
-          </Text>
-          <Text style={styles.panelSeccionAyuda}>
-            Regla de negocio: Envío $8.000 si el subtotal es menor a $150.000 COP. Envío GRATIS si el subtotal es igual o superior a $150.000 COP. $0 si el carrito está vacío.
-          </Text>
-
-          <View style={styles.resumenLinea}>
-            <Text style={styles.resumenLabel}>
-              Subtotal ({resumenCarrito.totalUnidades} uds.):
-            </Text>
-            <Text style={styles.resumenValor}>
-              {formatearCOP(resumenCarrito.subtotal)} COP
-            </Text>
-          </View>
-
-          {cuponAplicado && (
-            <View style={styles.resumenLinea}>
-              <Text style={[styles.resumenLabel, styles.textoVerde]}>
-                Descuento cupón ({cuponAplicado} · 10%):
-              </Text>
-              <Text style={[styles.resumenValor, styles.textoVerde]}>
-                -{formatearCOP(resumenCarrito.descuento)} COP
-              </Text>
-            </View>
-          )}
-
-          <View style={styles.resumenLinea}>
-            <Text style={styles.resumenLabel}>Costo de envío simulado:</Text>
-            <Text
-              style={[
-                styles.resumenValor,
-                resumenCarrito.envioGratis && styles.textoVerde,
-              ]}
-            >
-              {carrito.length === 0
-                ? '$0 COP (Carrito vacío)'
-                : resumenCarrito.envioGratis
-                ? 'GRATIS ($0 COP)'
-                : `${formatearCOP(resumenCarrito.envio)} COP`}
-            </Text>
-          </View>
-
-          <View style={styles.resumenSeparador} />
-
-          <View style={styles.resumenLineaTotal}>
-            <Text style={styles.resumenTotalLabel}>TOTAL ESTIMADO:</Text>
-            <Text style={styles.resumenTotalValor}>
-              {formatearCOP(resumenCarrito.total)} COP
-            </Text>
-          </View>
-        </View>
-
-        {/* SECCIÓN HU12 Y HU13: DATOS BÁSICOS DEL COMPRADOR Y CONFIRMACIÓN */}
-        <View style={styles.panelSeccionCard}>
-          <Text style={styles.panelSeccionTitulo}>
-            🧑‍✈️ DATOS BÁSICOS DEL COMPRADOR (HU12)
-          </Text>
-
-          <View style={styles.avisoSimulacionBox}>
-            <Text style={styles.avisoSimulacionTexto}>
-              🛡️ SIMULACIÓN ACADÉMICA: No se exigen números de tarjeta, contraseñas, documentos reales ni datos bancarios sensibles. No se realiza ningún cobro real.
-            </Text>
-          </View>
-
-          <Text style={styles.inputLabel}>Nombre completo del comprador *:</Text>
-          <TextInput
-            style={styles.inputCampo}
-            value={compradorNombre}
-            onChangeText={(t) => {
-              setCompradorNombre(t);
-              setResumenRevisado(false);
-            }}
-            placeholder="Ej. John-117 / Comandante Keyes"
-            placeholderTextColor="#64748B"
-          />
-
-          <Text style={styles.inputLabel}>Teléfono de contacto *:</Text>
-          <TextInput
-            style={styles.inputCampo}
-            value={compradorTelefono}
-            onChangeText={(t) => {
-              setCompradorTelefono(t);
-              setResumenRevisado(false);
-            }}
-            keyboardType="phone-pad"
-            placeholder="Ej. 3001172552"
-            placeholderTextColor="#64748B"
-          />
-
-          <Text style={styles.inputLabel}>
-            Municipio de entrega * (selección rápida o escribe):
-          </Text>
-          <View style={styles.municipiosChipsRow}>
-            {municipiosSugeridos.map((mun) => (
+        <Text style={[styles.inputLabel, { color: tema.textoSecundario, fontSize: fs(12) }]}>
+          1. Dirección de entrega ficticia:
+        </Text>
+        <View style={styles.municipiosChipsRow}>
+          {direcciones.map((dir) => {
+            const sel = dir.id === direccionSeleccionadaId;
+            return (
               <Pressable
-                key={mun}
-                onPress={() => {
-                  setCompradorMunicipio(mun);
-                  setResumenRevisado(false);
-                }}
+                key={dir.id}
+                onPress={() => manejarSeleccionarDireccion(dir.id)}
                 style={[
                   styles.chipMunicipio,
-                  compradorMunicipio === mun && styles.chipMunicipioActivo,
+                  {
+                    backgroundColor: sel ? tema.primarioFondo : tema.superficie,
+                    borderColor: sel ? tema.primario : tema.borde,
+                  },
                 ]}
               >
                 <Text
                   style={[
                     styles.chipMunicipioTexto,
-                    compradorMunicipio === mun && styles.chipMunicipioTextoActivo,
+                    { color: sel ? tema.primario : tema.textoSecundario, fontSize: fs(11) },
                   ]}
                 >
-                  📍 {mun}
+                  {dir.principal ? '★ ' : '📍 '}
+                  {dir.alias} ({dir.municipio})
                 </Text>
               </Pressable>
-            ))}
-          </View>
-          <TextInput
-            style={styles.inputCampo}
-            value={compradorMunicipio}
-            onChangeText={(t) => {
-              setCompradorMunicipio(t);
+            );
+          })}
+          <Pressable
+            onPress={() => {
+              setDireccionSeleccionadaId(null);
               setResumenRevisado(false);
             }}
-            placeholder="Ej. Mosquera, Madrid, Funza..."
-            placeholderTextColor="#64748B"
-          />
-
-          <Text style={styles.inputLabel}>Dirección de entrega *:</Text>
-          <TextInput
-            style={styles.inputCampo}
-            value={compradorDireccion}
-            onChangeText={(t) => {
-              setCompradorDireccion(t);
-              setResumenRevisado(false);
-            }}
-            placeholder="Ej. Base UNSC Sector 7 Calle 117 # 25-52"
-            placeholderTextColor="#64748B"
-          />
-
-          {/* HU12-CA03: Revisar el resumen antes de confirmar */}
-          <Pressable
-            onPress={revisarDatosYResumen}
-            style={styles.btnValidarPrevia}
-          >
-            <Text style={styles.btnValidarPreviaTexto}>
-              📋 1. Validar datos y revisar resumen previo (HU12-CA03)
-            </Text>
-          </Pressable>
-
-          {resumenRevisado && carrito.length > 0 && (
-            <View style={styles.preConfirmacionResumenBox}>
-              <Text style={styles.preConfirmacionTitulo}>
-                ✓ RESUMEN VERIFICADO LISTO PARA DESPACHO:
-              </Text>
-              <Text style={styles.preConfirmacionTexto}>
-                • Destinatario: {compradorNombre.trim()} ({compradorTelefono.trim()})
-              </Text>
-              <Text style={styles.preConfirmacionTexto}>
-                • Destino: {compradorDireccion.trim()}, {compradorMunicipio.trim()}
-              </Text>
-              <Text style={styles.preConfirmacionTexto}>
-                • Artículos: {resumenCarrito.totalUnidades} unidad(es) · Total final:{' '}
-                {formatearCOP(resumenCarrito.total)} COP
-              </Text>
-            </View>
-          )}
-
-          {/* HU13: Botón Confirmar compra simulada */}
-          <Pressable
-            onPress={confirmarCompraSimulada}
             style={[
-              styles.btnConfirmarCompra,
-              carrito.length === 0 && styles.btnPrimarioCardAgotado,
+              styles.chipMunicipio,
+              {
+                backgroundColor: !direccionSeleccionadaId ? tema.errorFondo : tema.superficie,
+                borderColor: !direccionSeleccionadaId ? tema.error : tema.borde,
+              },
             ]}
           >
-            <Text style={styles.btnConfirmarCompraTexto}>
-              ✅ 2. Confirmar compra simulada ({formatearCOP(resumenCarrito.total)} COP)
+            <Text
+              style={[
+                styles.chipMunicipioTexto,
+                { color: !direccionSeleccionadaId ? tema.error : tema.textoSuave, fontSize: fs(11) },
+              ]}
+            >
+              Sin selección
             </Text>
           </Pressable>
         </View>
-      </ScrollView>
-    );
-  };
 
-  // VISTA 5: HISTORIAL Y DETALLE DE PEDIDOS (HU15)
+        <Text style={[styles.inputLabel, { color: tema.textoSecundario, fontSize: fs(12) }]}>
+          2. Modalidad de envío:
+        </Text>
+        <View style={styles.municipiosChipsRow}>
+          {MODALIDADES_ENVIO.map((mod) => {
+            const sel = modalidadEnvio === mod.id;
+            return (
+              <Pressable
+                key={mod.id}
+                onPress={() => {
+                  setModalidadEnvio(mod.id);
+                  setResumenRevisado(false);
+                }}
+                style={[
+                  styles.chipMunicipio,
+                  {
+                    backgroundColor: sel ? tema.infoFondo : tema.superficie,
+                    borderColor: sel ? tema.info : tema.borde,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.chipMunicipioTexto,
+                    { color: sel ? tema.info : tema.textoSecundario, fontSize: fs(11) },
+                  ]}
+                >
+                  🚚 {mod.nombre}
+                </Text>
+              </Pressable>
+            );
+          })}
+          <Pressable
+            onPress={() => {
+              setModalidadEnvio(null);
+              setResumenRevisado(false);
+            }}
+            style={[
+              styles.chipMunicipio,
+              {
+                backgroundColor: !modalidadEnvio ? tema.errorFondo : tema.superficie,
+                borderColor: !modalidadEnvio ? tema.error : tema.borde,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.chipMunicipioTexto,
+                { color: !modalidadEnvio ? tema.error : tema.textoSuave, fontSize: fs(11) },
+              ]}
+            >
+              Sin modalidad
+            </Text>
+          </Pressable>
+        </View>
+
+        <View
+          style={[
+            styles.avisoSimulacionBox,
+            {
+              backgroundColor: envioCalculado.disponible ? tema.primarioFondo : tema.secundarioFondo,
+              borderColor: envioCalculado.disponible ? tema.primario : tema.secundario,
+            },
+          ]}
+        >
+          <Text
+            style={[
+              styles.avisoSimulacionTexto,
+              {
+                color: envioCalculado.disponible ? tema.primario : tema.secundario,
+                fontSize: fs(12),
+              },
+            ]}
+          >
+            {envioCalculado.disponible ? '🚚 ' : '⚠️ '}
+            {envioCalculado.mensaje}
+          </Text>
+        </View>
+      </View>
+
+      {/* Resumen de Compra (HU11 + HU26) */}
+      <View
+        style={[
+          styles.panelSeccionCard,
+          { backgroundColor: tema.tarjeta, borderColor: tema.borde },
+        ]}
+      >
+        <Text style={[styles.panelSeccionTitulo, { color: tema.secundario, fontSize: fs(13) }]}>
+          📊 RESUMEN DE COMPRA Y ENVÍO (HU26)
+        </Text>
+        <Text style={[styles.panelSeccionAyuda, { color: tema.textoSuave, fontSize: fs(11) }]}>
+          Tarifas de práctica: Mosquera ($6.000 / $10.000) · Funza ($8.000 / $12.000) · Madrid ($10.000 / $14.000).
+        </Text>
+
+        <View style={styles.resumenLinea}>
+          <Text style={[styles.resumenLabel, { color: tema.textoSecundario, fontSize: fs(13) }]}>
+            Subtotal ({resumenCarrito.totalUnidades} uds.):
+          </Text>
+          <Text style={[styles.resumenValor, { color: tema.textoPrincipal, fontSize: fs(13) }]}>
+            {formatearCOP(resumenCarrito.subtotal)} COP
+          </Text>
+        </View>
+
+        {cuponAplicado && (
+          <View style={styles.resumenLinea}>
+            <Text style={[styles.resumenLabel, { color: tema.primario, fontSize: fs(13) }]}>
+              Descuento ({cuponAplicado}):
+            </Text>
+            <Text style={[styles.resumenValor, { color: tema.primario, fontSize: fs(13) }]}>
+              -{formatearCOP(resumenCarrito.descuento)} COP
+            </Text>
+          </View>
+        )}
+
+        <View style={styles.resumenLinea}>
+          <Text style={[styles.resumenLabel, { color: tema.textoSecundario, fontSize: fs(13) }]}>
+            Envío {resumenCarrito.plazoEnvio ? `(${resumenCarrito.plazoEnvio})` : ''}:
+          </Text>
+          <Text style={[styles.resumenValor, { color: tema.textoPrincipal, fontSize: fs(13) }]}>
+            {envioCalculado.disponible
+              ? `${formatearCOP(resumenCarrito.envio)} COP`
+              : 'Pendiente'}
+          </Text>
+        </View>
+
+        <View style={[styles.resumenSeparador, { backgroundColor: tema.borde }]} />
+
+        <View style={styles.resumenLineaTotal}>
+          <Text style={[styles.resumenTotalLabel, { color: tema.secundario, fontSize: fs(15) }]}>
+            TOTAL ESTIMADO:
+          </Text>
+          <Text style={[styles.resumenTotalValor, { color: tema.primario, fontSize: fs(19) }]}>
+            {formatearCOP(resumenCarrito.total)} COP
+          </Text>
+        </View>
+      </View>
+
+      {/* Datos básicos comprador + Confirmación */}
+      <View
+        style={[
+          styles.panelSeccionCard,
+          { backgroundColor: tema.tarjeta, borderColor: tema.borde },
+        ]}
+      >
+        <Text style={[styles.panelSeccionTitulo, { color: tema.secundario, fontSize: fs(13) }]}>
+          🧑‍✈️ DATOS FICTICIOS DEL COMPRADOR Y CONFIRMACIÓN
+        </Text>
+
+        <Text style={[styles.inputLabel, { color: tema.textoSecundario, fontSize: fs(12) }]}>
+          Nombre ficticio *:
+        </Text>
+        <TextInput
+          style={[
+            styles.inputCampo,
+            {
+              backgroundColor: tema.inputFondo,
+              color: tema.textoPrincipal,
+              borderColor: tema.borde,
+              fontSize: fs(13),
+            },
+          ]}
+          value={compradorNombre}
+          onChangeText={(t) => {
+            setCompradorNombre(t);
+            setResumenRevisado(false);
+          }}
+          placeholder="Ej. Operador Demo 117"
+          placeholderTextColor={tema.placeholder}
+        />
+
+        <Text style={[styles.inputLabel, { color: tema.textoSecundario, fontSize: fs(12) }]}>
+          Teléfono ficticio *:
+        </Text>
+        <TextInput
+          style={[
+            styles.inputCampo,
+            {
+              backgroundColor: tema.inputFondo,
+              color: tema.textoPrincipal,
+              borderColor: tema.borde,
+              fontSize: fs(13),
+            },
+          ]}
+          value={compradorTelefono}
+          onChangeText={(t) => {
+            setCompradorTelefono(t);
+            setResumenRevisado(false);
+          }}
+          keyboardType="phone-pad"
+          placeholder="Ej. 3000000117"
+          placeholderTextColor={tema.placeholder}
+        />
+
+        <Pressable
+          onPress={revisarDatosYResumen}
+          style={[styles.btnValidarPrevia, { backgroundColor: tema.infoFondo, borderColor: tema.info }]}
+        >
+          <Text style={[styles.btnValidarPreviaTexto, { color: tema.info, fontSize: fs(12) }]}>
+            📋 1. Validar dirección, envío y resumen
+          </Text>
+        </Pressable>
+
+        {resumenRevisado && carrito.length > 0 && direccionActiva && (
+          <View
+            style={[
+              styles.preConfirmacionResumenBox,
+              { backgroundColor: tema.primarioFondo, borderColor: tema.primario },
+            ]}
+          >
+            <Text style={[styles.preConfirmacionTitulo, { color: tema.primario, fontSize: fs(12) }]}>
+              ✓ RESUMEN LISTO PARA CONFIRMAR:
+            </Text>
+            <Text style={[styles.preConfirmacionTexto, { color: tema.textoPrincipal, fontSize: fs(12) }]}>
+              • Destino: {direccionActiva.alias} ({direccionActiva.municipio}) · Plazo: {resumenCarrito.plazoEnvio}
+            </Text>
+            <Text style={[styles.preConfirmacionTexto, { color: tema.textoPrincipal, fontSize: fs(12) }]}>
+              • Total final: {formatearCOP(resumenCarrito.total)} COP
+            </Text>
+          </View>
+        )}
+
+        <Pressable
+          onPress={confirmarCompraSimulada}
+          style={[
+            styles.btnConfirmarCompra,
+            {
+              backgroundColor: carrito.length === 0 ? tema.errorFondo : tema.primarioBoton,
+              borderColor: carrito.length === 0 ? tema.error : tema.primario,
+            },
+          ]}
+        >
+          <Text style={[styles.btnConfirmarCompraTexto, { fontSize: fs(13) }]}>
+            ✅ 2. Confirmar compra simulada ({formatearCOP(resumenCarrito.total)} COP)
+          </Text>
+        </Pressable>
+      </View>
+    </ScrollView>
+  );
+
+  // VISTA 5: MIS PEDIDOS · SEGUIMIENTO (HU27), CANCELACIÓN (HU28), DEVOLUCIÓN (HU34)
   const renderVistaHistorial = () => {
     const pedidoSeleccionado =
       historialPedidos.find((p) => p.codigo === pedidoDetalleCodigo) ||
       historialPedidos[0];
 
+    const colorEstado = (estado) => {
+      if (estado === 'Entregado') return tema.primario;
+      if (estado === 'Cancelado') return tema.error;
+      if (estado === 'En camino') return tema.info;
+      return tema.secundario;
+    };
+
+    const siguienteEstado = pedidoSeleccionado
+      ? obtenerSiguienteEstadoPedido(pedidoSeleccionado.estado)
+      : null;
+    const evalCancelacion = evaluarCancelacionPedido(pedidoSeleccionado);
+    const evalDevolucion = evaluarDevolucionPedido(pedidoSeleccionado);
+
     return (
       <ScrollView contentContainerStyle={styles.scrollVistaContenedor}>
-        <View style={styles.encabezadoSeccionBox}>
-          <Text style={styles.encabezadoSeccionTitulo}>
-            📜 BITÁCORA DE PEDIDOS CONFIRMADOS (HU15)
+        <View
+          style={[
+            styles.encabezadoSeccionBox,
+            { backgroundColor: tema.tarjeta, borderLeftColor: tema.primario },
+          ]}
+        >
+          <Text style={[styles.encabezadoSeccionTitulo, { color: tema.textoPrincipal, fontSize: fs(15) }]}>
+            📜 MIS PEDIDOS · SEGUIMIENTO Y POSVENTA (HU27, HU28, HU34)
           </Text>
-          <Text style={styles.encabezadoSeccionSub}>
-            Cada pedido guarda una copia inmutable de sus artículos, precios, envío y total.
+          <Text style={[styles.encabezadoSeccionSub, { color: tema.textoSuave, fontSize: fs(12) }]}>
+            Consulta el historial cronológico, simula avances de entrega, cancela antes del despacho o solicita devolución en entregados.
           </Text>
         </View>
 
         {historialPedidos.length === 0 ? (
-          <View style={styles.estadoVacioBox}>
+          <View
+            style={[
+              styles.estadoVacioBox,
+              { backgroundColor: tema.tarjeta, borderColor: tema.borde },
+            ]}
+          >
             <Text style={styles.estadoVacioIcono}>📜</Text>
-            <Text style={styles.estadoVacioTitulo}>
-              No hay pedidos registrados todavía
-            </Text>
-            <Text style={styles.estadoVacioSubtitulo}>
-              Cuando confirmes una compra simulada en el carrito, aquí aparecerá su código único, fecha/hora y desglose completo.
+            <Text style={[styles.estadoVacioTitulo, { color: tema.textoPrincipal, fontSize: fs(18) }]}>
+              No hay pedidos registrados
             </Text>
             <Pressable
               onPress={() => irAVista('catalogo')}
-              style={styles.btnAccionVacio}
+              style={[
+                styles.btnAccionVacio,
+                { backgroundColor: tema.primarioBoton, borderColor: tema.primario },
+              ]}
             >
-              <Text style={styles.btnAccionVacioTexto}>
-                🛒 Ir al Catálogo para simular una compra
+              <Text style={[styles.btnAccionVacioTexto, { fontSize: fs(13) }]}>
+                🛒 Ir al Catálogo
               </Text>
             </Pressable>
           </View>
         ) : (
           <View>
-            <Text style={styles.seccionSubtitulo}>
-              LISTA DE PEDIDOS CONFIRMADOS ({historialPedidos.length}) · SELECCIONA UNO PARA VER SU DETALLE:
-            </Text>
-
             {historialPedidos.map((pedido) => {
               const seleccionado =
-                pedidoSeleccionado &&
-                pedidoSeleccionado.codigo === pedido.codigo;
+                pedidoSeleccionado && pedidoSeleccionado.codigo === pedido.codigo;
+              const estColor = colorEstado(pedido.estado || 'Confirmado');
+
               return (
                 <Pressable
                   key={pedido.codigo}
-                  onPress={() => setPedidoDetalleCodigo(pedido.codigo)}
+                  onPress={() => {
+                    setPedidoDetalleCodigo(pedido.codigo);
+                    setPedidoConfirmandoCancelacion(null);
+                    setPedidoDevolucionId(null);
+                  }}
                   style={[
                     styles.pedidoListaCard,
-                    seleccionado && styles.pedidoListaCardActivo,
+                    {
+                      backgroundColor: seleccionado ? tema.primarioFondo : tema.tarjeta,
+                      borderColor: seleccionado ? tema.primario : tema.borde,
+                    },
                   ]}
                 >
                   <View style={styles.pedidoListaTop}>
-                    <Text style={styles.pedidoCodigoTexto}>
+                    <Text style={[styles.pedidoCodigoTexto, { color: tema.textoPrincipal, fontSize: fs(14) }]}>
                       📦 {pedido.codigo}
                     </Text>
-                    <Text style={styles.pedidoTotalBadge}>
-                      {formatearCOP(pedido.total)} COP
+                    <Text style={[styles.pedidoEstadoPill, { color: estColor, borderColor: estColor, fontSize: fs(11) }]}>
+                      {pedido.estado || 'Confirmado'}
                     </Text>
                   </View>
-                  <Text style={styles.pedidoFechaTexto}>
-                    🕒 Fecha/Hora: {pedido.fechaHora}
+                  <Text style={[styles.pedidoFechaTexto, { color: tema.textoSuave, fontSize: fs(12) }]}>
+                    🕒 {pedido.fechaHora} · Total: {formatearCOP(pedido.total)} COP
                   </Text>
-                  <Text style={styles.pedidoCompradorTexto}>
-                    👤 {pedido.comprador.nombre} · 📍 {pedido.comprador.municipio}
+                  <Text style={[styles.pedidoCompradorTexto, { color: tema.textoSecundario, fontSize: fs(12) }]}>
+                    📍 {pedido.comprador?.municipio} · {pedido.comprador?.nombre}
                   </Text>
                 </Pressable>
               );
             })}
 
-            {/* HU15-CA02: Detalle del pedido seleccionado */}
             {pedidoSeleccionado && (
-              <View style={styles.pedidoDetallePanel}>
-                <Text style={styles.pedidoDetalleTitulo}>
+              <View
+                style={[
+                  styles.pedidoDetallePanel,
+                  { backgroundColor: tema.tarjeta, borderColor: tema.info },
+                ]}
+              >
+                <Text style={[styles.pedidoDetalleTitulo, { color: tema.info, fontSize: fs(15) }]}>
                   🔍 DETALLE DEL PEDIDO {pedidoSeleccionado.codigo}
                 </Text>
-                <Text style={styles.pedidoDetalleMeta}>
-                  Fecha de registro: {pedidoSeleccionado.fechaHora}
+                <Text style={[styles.pedidoDetalleMeta, { color: tema.textoSecundario, fontSize: fs(12) }]}>
+                  Estado actual:{' '}
+                  <Text style={{ fontWeight: '900', color: colorEstado(pedidoSeleccionado.estado) }}>
+                    {pedidoSeleccionado.estado}
+                  </Text>
                 </Text>
-                <Text style={styles.pedidoDetalleMeta}>
-                  Destinatario: {pedidoSeleccionado.comprador.nombre} · Tel:{' '}
-                  {pedidoSeleccionado.comprador.telefono}
-                </Text>
-                <Text style={styles.pedidoDetalleMeta}>
-                  Dirección: {pedidoSeleccionado.comprador.direccion} (
-                  {pedidoSeleccionado.comprador.municipio})
+                <Text style={[styles.pedidoDetalleMeta, { color: tema.textoSecundario, fontSize: fs(12) }]}>
+                  Destino: {pedidoSeleccionado.comprador?.direccion} ({pedidoSeleccionado.comprador?.municipio})
                 </Text>
 
-                <View style={styles.resumenSeparador} />
-
-                <Text style={styles.seccionSubtitulo}>
-                  ARTÍCULOS REGISTRADOS EN ESTE PEDIDO:
+                {/* HU27 · Historial cronológico de estados */}
+                <View style={[styles.resumenSeparador, { backgroundColor: tema.borde }]} />
+                <Text style={[styles.seccionSubtitulo, { color: tema.secundario, fontSize: fs(11) }]}>
+                  HISTORIAL CRONOLÓGICO DE ESTADOS (HU27):
                 </Text>
+                {(pedidoSeleccionado.historialEstados || []).map((ev, idx) => (
+                  <View
+                    key={`${ev.estado}-${idx}`}
+                    style={[
+                      styles.timelineItem,
+                      { borderLeftColor: colorEstado(ev.estado) },
+                    ]}
+                  >
+                    <Text style={[styles.timelineEstado, { color: tema.textoPrincipal, fontSize: fs(12) }]}>
+                      • {ev.estado} ({ev.fecha})
+                    </Text>
+                    <Text style={[styles.timelineDetalle, { color: tema.textoSuave, fontSize: fs(11) }]}>
+                      {ev.detalle}
+                    </Text>
+                  </View>
+                ))}
 
-                {pedidoSeleccionado.articulos.map((art) => (
-                  <View key={art.id} style={styles.pedidoArticuloRow}>
+                {/* HU27 · Control exacto: "Simular avance de entrega" */}
+                <Pressable
+                  onPress={() => manejarAvanzarEstadoPedido(pedidoSeleccionado.codigo)}
+                  style={[
+                    styles.btnAvanceEntrega,
+                    {
+                      backgroundColor: siguienteEstado ? tema.infoFondo : tema.superficie,
+                      borderColor: siguienteEstado ? tema.info : tema.borde,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.btnAvanceEntregaTxt,
+                      { color: siguienteEstado ? tema.info : tema.textoSuave, fontSize: fs(12) },
+                    ]}
+                  >
+                    {siguienteEstado
+                      ? `🚚 Simular avance de entrega (→ ${siguienteEstado})`
+                      : `🚫 Simular avance de entrega (Bloqueado en "${pedidoSeleccionado.estado}")`}
+                  </Text>
+                </Pressable>
+
+                {/* HU28 · Cancelación controlada y reintegro único */}
+                <Pressable
+                  onPress={() => {
+                    if (!evalCancelacion.permitida) {
+                      notificar('error', 'CANCELACIÓN BLOQUEADA (HU28)', evalCancelacion.razon);
+                      return;
+                    }
+                    setPedidoConfirmandoCancelacion(pedidoSeleccionado.codigo);
+                  }}
+                  style={[
+                    styles.btnCancelarPedido,
+                    {
+                      backgroundColor: evalCancelacion.permitida
+                        ? tema.errorFondo
+                        : tema.superficie,
+                      borderColor: evalCancelacion.permitida ? tema.error : tema.borde,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.btnCancelarPedidoTxt,
+                      {
+                        color: evalCancelacion.permitida ? tema.error : tema.textoSuave,
+                        fontSize: fs(12),
+                      },
+                    ]}
+                  >
+                    {evalCancelacion.permitida
+                      ? '🛑 Cancelar pedido (restituye stock por variante)'
+                      : `🔒 Cancelación deshabilitada (${pedidoSeleccionado.estado})`}
+                  </Text>
+                </Pressable>
+
+                {pedidoConfirmandoCancelacion === pedidoSeleccionado.codigo && (
+                  <View
+                    style={[
+                      styles.confirmacionCancelBox,
+                      { backgroundColor: tema.errorFondo, borderColor: tema.error },
+                    ]}
+                  >
+                    <Text style={[styles.confirmacionCancelTxt, { color: tema.error, fontSize: fs(12) }]}>
+                      ¿Confirmas cancelar lógicamente {pedidoSeleccionado.codigo}? Se restituirán las unidades exactas una sola vez.
+                    </Text>
+                    <View style={styles.confirmacionCancelBtns}>
+                      <Pressable
+                        onPress={() => manejarConfirmarCancelacion(pedidoSeleccionado.codigo)}
+                        style={[styles.btnConfirmarSi, { backgroundColor: tema.error }]}
+                      >
+                        <Text style={[styles.btnConfirmarSiTxt, { fontSize: fs(12) }]}>
+                          Sí, confirmar cancelación
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => setPedidoConfirmandoCancelacion(null)}
+                        style={[styles.btnConfirmarNo, { backgroundColor: tema.tarjeta, borderColor: tema.borde }]}
+                      >
+                        <Text style={[styles.btnConfirmarNoTxt, { color: tema.textoPrincipal, fontSize: fs(12) }]}>
+                          Mantener pedido
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                )}
+
+                {/* HU34 · Solicitud de devolución simulada (solo Entregado) */}
+                <Pressable
+                  onPress={() => {
+                    if (!evalDevolucion.permitida) {
+                      notificar('alerta', 'DEVOLUCIÓN NO HABILITADA (HU34)', evalDevolucion.razon);
+                      return;
+                    }
+                    setPedidoDevolucionId(pedidoSeleccionado.codigo);
+                  }}
+                  style={[
+                    styles.btnDevolucion,
+                    {
+                      backgroundColor: evalDevolucion.permitida
+                        ? tema.secundarioFondo
+                        : tema.superficie,
+                      borderColor: evalDevolucion.permitida ? tema.secundario : tema.borde,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.btnDevolucionTxt,
+                      {
+                        color: evalDevolucion.permitida ? tema.secundario : tema.textoSuave,
+                        fontSize: fs(12),
+                      },
+                    ]}
+                  >
+                    {pedidoSeleccionado.devolucionSolicitada
+                      ? '✓ Devolución simulada ya solicitada'
+                      : evalDevolucion.permitida
+                      ? '↩️ Solicitar devolución simulada (HU34)'
+                      : `↩️ Devolución deshabilitada (requiere estado "Entregado")`}
+                  </Text>
+                </Pressable>
+
+                {pedidoDevolucionId === pedidoSeleccionado.codigo && (
+                  <View
+                    style={[
+                      styles.confirmacionCancelBox,
+                      { backgroundColor: tema.secundarioFondo, borderColor: tema.secundario },
+                    ]}
+                  >
+                    <Text style={[styles.confirmacionCancelTxt, { color: tema.secundario, fontSize: fs(12) }]}>
+                      Describe el motivo de la devolución simulada:
+                    </Text>
+                    <TextInput
+                      style={[
+                        styles.inputCampo,
+                        {
+                          backgroundColor: tema.inputFondo,
+                          color: tema.textoPrincipal,
+                          borderColor: tema.borde,
+                          fontSize: fs(12),
+                        },
+                      ]}
+                      value={motivoDevolucionInput}
+                      onChangeText={setMotivoDevolucionInput}
+                      placeholder="Ej. Talla no corresponde..."
+                      placeholderTextColor={tema.placeholder}
+                    />
+                    <Pressable
+                      onPress={() => manejarSolicitarDevolucion(pedidoSeleccionado.codigo)}
+                      style={[styles.btnConfirmarSi, { backgroundColor: tema.secundario }]}
+                    >
+                      <Text style={[styles.btnConfirmarSiTxt, { fontSize: fs(12) }]}>
+                        Confirmar solicitud de devolución
+                      </Text>
+                    </Pressable>
+                  </View>
+                )}
+
+                {/* Atajo HU32 · Centro de ayuda */}
+                <Pressable
+                  onPress={() => {
+                    setPedidoSoportePreseleccionado(pedidoSeleccionado.codigo);
+                    irAVista('soporte');
+                  }}
+                  style={[styles.btnAyudaPedido, { backgroundColor: tema.superficie, borderColor: tema.borde }]}
+                >
+                  <Text style={[styles.btnAyudaPedidoTxt, { color: tema.textoPrincipal, fontSize: fs(12) }]}>
+                    🛟 Solicitar ayuda sobre este pedido (HU32)
+                  </Text>
+                </Pressable>
+
+                {/* Artículos congelados e inmutables */}
+                <View style={[styles.resumenSeparador, { backgroundColor: tema.borde }]} />
+                <Text style={[styles.seccionSubtitulo, { color: tema.textoSuave, fontSize: fs(11) }]}>
+                  ARTÍCULOS INMUTABLES DEL PEDIDO:
+                </Text>
+                {(pedidoSeleccionado.articulos || []).map((art, i) => (
+                  <View
+                    key={`${art.id}-${art.varianteId || i}`}
+                    style={[styles.pedidoArticuloRow, { borderBottomColor: tema.borde }]}
+                  >
                     <View style={styles.miniaturaWrapper}>
                       <Image
                         source={obtenerFuenteImagen(art)}
@@ -1848,59 +3335,46 @@ export default function App() {
                       />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.pedidoArticuloNombre}>
+                      <Text style={[styles.pedidoArticuloNombre, { color: tema.textoPrincipal, fontSize: fs(13) }]}>
                         {art.nombre}
                       </Text>
-                      <Text style={styles.pedidoArticuloDetalle}>
-                        Cantidad: {art.cantidad} × Precio unitario:{' '}
-                        {formatearCOP(art.precioUnitario)} COP
+                      <Text style={[styles.pedidoArticuloDetalle, { color: tema.info, fontSize: fs(11) }]}>
+                        Variante: {art.varianteEtiqueta || 'Estándar'}
+                      </Text>
+                      <Text style={[styles.pedidoArticuloDetalle, { color: tema.textoSuave, fontSize: fs(11) }]}>
+                        {art.cantidad} × {formatearCOP(art.precioUnitario)} COP
                       </Text>
                     </View>
-                    <Text style={styles.pedidoArticuloSubtotal}>
+                    <Text style={[styles.pedidoArticuloSubtotal, { color: tema.primario, fontSize: fs(13) }]}>
                       {formatearCOP(art.subtotalLinea)} COP
                     </Text>
                   </View>
                 ))}
 
-                <View style={styles.resumenSeparador} />
-
                 <View style={styles.resumenLinea}>
-                  <Text style={styles.resumenLabel}>Subtotal registrado:</Text>
-                  <Text style={styles.resumenValor}>
+                  <Text style={[styles.resumenLabel, { color: tema.textoSecundario, fontSize: fs(12) }]}>
+                    Subtotal:
+                  </Text>
+                  <Text style={[styles.resumenValor, { color: tema.textoPrincipal, fontSize: fs(12) }]}>
                     {formatearCOP(pedidoSeleccionado.subtotal)} COP
                   </Text>
                 </View>
-
-                {pedidoSeleccionado.descuento > 0 && (
-                  <View style={styles.resumenLinea}>
-                    <Text style={[styles.resumenLabel, styles.textoVerde]}>
-                      Descuento cupón ({pedidoSeleccionado.cuponAplicado}):
-                    </Text>
-                    <Text style={[styles.resumenValor, styles.textoVerde]}>
-                      -{formatearCOP(pedidoSeleccionado.descuento)} COP
-                    </Text>
-                  </View>
-                )}
-
                 <View style={styles.resumenLinea}>
-                  <Text style={styles.resumenLabel}>Envío registrado:</Text>
-                  <Text style={styles.resumenValor}>
-                    {pedidoSeleccionado.envio === 0
-                      ? 'GRATIS ($0 COP)'
-                      : `${formatearCOP(pedidoSeleccionado.envio)} COP`}
+                  <Text style={[styles.resumenLabel, { color: tema.textoSecundario, fontSize: fs(12) }]}>
+                    Envío ({pedidoSeleccionado.modalidadEnvio || 'estándar'}):
+                  </Text>
+                  <Text style={[styles.resumenValor, { color: tema.textoPrincipal, fontSize: fs(12) }]}>
+                    {formatearCOP(pedidoSeleccionado.envio)} COP
                   </Text>
                 </View>
-
                 <View style={styles.resumenLineaTotal}>
-                  <Text style={styles.resumenTotalLabel}>TOTAL REGISTRADO:</Text>
-                  <Text style={styles.resumenTotalValor}>
+                  <Text style={[styles.resumenTotalLabel, { color: tema.secundario, fontSize: fs(14) }]}>
+                    TOTAL REGISTRADO:
+                  </Text>
+                  <Text style={[styles.resumenTotalValor, { color: tema.primario, fontSize: fs(17) }]}>
                     {formatearCOP(pedidoSeleccionado.total)} COP
                   </Text>
                 </View>
-
-                <Text style={styles.confirmacionPedidoAviso}>
-                  {pedidoSeleccionado.notaSimulacion}
-                </Text>
               </View>
             )}
           </View>
@@ -1909,318 +3383,293 @@ export default function App() {
     );
   };
 
-  // VISTA 6: PANEL DE VENDEDOR / INTENDENCIA UNSC (HU18, HU20)
-  const renderVistaVendedor = () => {
-    return (
-      <ScrollView contentContainerStyle={styles.scrollVistaContenedor}>
-        <View style={styles.encabezadoSeccionBox}>
-          <Text style={styles.encabezadoSeccionTitulo}>
-            ⚙️ PANEL DE VENDEDOR · INTENDENCIA UNSC (HU18)
-          </Text>
-          <Text style={styles.encabezadoSeccionSub}>
-            Crea nuevos suministros o selecciona un producto existente abajo para actualizar su información y stock.
-          </Text>
-        </View>
+  // VISTA 6: PANEL VENDEDOR (HU18 + HU20)
+  const renderVistaVendedor = () => (
+    <ScrollView contentContainerStyle={styles.scrollVistaContenedor}>
+      <View
+        style={[
+          styles.encabezadoSeccionBox,
+          { backgroundColor: tema.tarjeta, borderLeftColor: tema.primario },
+        ]}
+      >
+        <Text style={[styles.encabezadoSeccionTitulo, { color: tema.textoPrincipal, fontSize: fs(15) }]}>
+          ⚙️ PANEL DE VENDEDOR (HU18)
+        </Text>
+        <Text style={[styles.encabezadoSeccionSub, { color: tema.textoSuave, fontSize: fs(12) }]}>
+          Crea o edita productos manteniendo sincronizada la única fuente de stock por variante.
+        </Text>
+      </View>
 
-        {/* Formulario de Creación / Edición (HU18-CA01, CA02, CA03) */}
-        <View style={styles.panelSeccionCard}>
-          <Text style={styles.panelSeccionTitulo}>
-            {editandoId
-              ? `✏️ EDITANDO REFERENCIA: ${editandoId}`
-              : '➕ REGISTRAR NUEVO PRODUCTO EN EL CATÁLOGO'}
-          </Text>
+      <View
+        style={[
+          styles.panelSeccionCard,
+          { backgroundColor: tema.tarjeta, borderColor: tema.borde },
+        ]}
+      >
+        <Text style={[styles.panelSeccionTitulo, { color: tema.secundario, fontSize: fs(13) }]}>
+          {editandoId ? `✏️ EDITAR ${editandoId}` : '➕ NUEVO PRODUCTO'}
+        </Text>
 
-          <Text style={styles.inputLabel}>Nombre del producto *:</Text>
-          <TextInput
-            style={styles.inputCampo}
-            value={vendNombre}
-            onChangeText={setVendNombre}
-            placeholder="Ej. Armadura Mjolnir Mark V [B] Noble"
-            placeholderTextColor="#64748B"
-          />
+        <Text style={[styles.inputLabel, { color: tema.textoSecundario, fontSize: fs(12) }]}>Nombre *:</Text>
+        <TextInput
+          style={[styles.inputCampo, { backgroundColor: tema.inputFondo, color: tema.textoPrincipal, borderColor: tema.borde, fontSize: fs(13) }]}
+          value={vendNombre}
+          onChangeText={setVendNombre}
+          placeholder="Nombre del producto"
+          placeholderTextColor={tema.placeholder}
+        />
 
-          <Text style={styles.inputLabel}>Categoría oficial *:</Text>
-          <View style={styles.categoriasVendedorGrid}>
-            {MARCA_INFO.categorias.map((cat) => {
-              const activa = vendCategoria === cat;
-              return (
-                <Pressable
-                  key={cat}
-                  onPress={() => setVendCategoria(cat)}
-                  style={[
-                    styles.chipCategoria,
-                    activa && styles.chipCategoriaActiva,
-                    { marginBottom: 8 },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.chipCategoriaTexto,
-                      activa && styles.chipCategoriaTextoActivo,
-                    ]}
-                  >
-                    {CATEGORIAS_CONFIG[cat]?.icono} {cat}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
+        <Text style={[styles.inputLabel, { color: tema.textoSecundario, fontSize: fs(12) }]}>Marca *:</Text>
+        <TextInput
+          style={[styles.inputCampo, { backgroundColor: tema.inputFondo, color: tema.textoPrincipal, borderColor: tema.borde, fontSize: fs(13) }]}
+          value={vendMarca}
+          onChangeText={setVendMarca}
+          placeholder="Ej. Materials Group UNSC"
+          placeholderTextColor={tema.placeholder}
+        />
 
-          <View style={styles.resenaInputsRow}>
-            <View style={{ flex: 1, marginRight: 8 }}>
-              <Text style={styles.inputLabel}>Precio en COP (entero &gt; 0) *:</Text>
-              <TextInput
-                style={styles.inputCampo}
-                value={vendPrecio}
-                onChangeText={setVendPrecio}
-                keyboardType="numeric"
-                placeholder="Ej. 160000"
-                placeholderTextColor="#64748B"
-              />
-            </View>
-
-            <View style={{ flex: 1 }}>
-              <Text style={styles.inputLabel}>Stock (entero &gt;= 0) *:</Text>
-              <TextInput
-                style={styles.inputCampo}
-                value={vendStock}
-                onChangeText={setVendStock}
-                keyboardType="numeric"
-                placeholder="Ej. 5"
-                placeholderTextColor="#64748B"
-              />
-            </View>
-          </View>
-
-          <Text style={styles.inputLabel}>
-            Descripción breve (mínimo 15 caracteres) *:
-          </Text>
-          <TextInput
-            style={styles.inputCampo}
-            value={vendDescripcion}
-            onChangeText={setVendDescripcion}
-            placeholder="Descripción táctica detallada del producto..."
-            placeholderTextColor="#64748B"
-          />
-
-          <Text style={styles.inputLabel}>Insignia / Código táctico (opcional):</Text>
-          <TextInput
-            style={styles.inputCampo}
-            value={vendInsignia}
-            onChangeText={setVendInsignia}
-            placeholder="Ej. MK-V · NOBLE"
-            placeholderTextColor="#64748B"
-          />
-
-          <Text style={styles.inputLabel}>
-            URL de imagen (opcional · si se deja vacío usa el render oficial de la categoría):
-          </Text>
-          <TextInput
-            style={styles.inputCampo}
-            value={vendImagenUrl}
-            onChangeText={setVendImagenUrl}
-            placeholder="https://halo.wiki.gallery/images/..."
-            placeholderTextColor="#64748B"
-          />
-
-          <View style={styles.vendedorBotonesRow}>
-            <Pressable
-              onPress={guardarProductoVendedor}
-              style={[styles.btnConfirmarCompra, { flex: 1 }]}
-            >
-              <Text style={styles.btnConfirmarCompraTexto}>
-                {editandoId
-                  ? '💾 Actualizar producto existente'
-                  : '➕ Registrar nuevo producto'}
-              </Text>
-            </Pressable>
-
-            {editandoId && (
-              <Pressable
-                onPress={limpiarFormularioVendedor}
-                style={styles.btnCancelarEdicion}
-              >
-                <Text style={styles.btnCancelarEdicionTexto}>Cancelar</Text>
-              </Pressable>
-            )}
-          </View>
-        </View>
-
-        {/* Lista rápida de inventario para seleccionar y editar sin duplicar (HU18-CA02) */}
-        <View style={styles.panelSeccionCard}>
-          <Text style={styles.panelSeccionTitulo}>
-            📦 INVENTARIO ACTUAL ({productos.length} PRODUCTOS) · PULSA &quot;EDITAR&quot; PARA MODIFICAR
-          </Text>
-
-          {productos.map((prod) => (
-            <View key={prod.id} style={styles.inventarioItemRow}>
-              <View style={styles.miniaturaWrapper}>
-                <Image
-                  source={obtenerFuenteImagen(prod)}
-                  style={styles.miniaturaImagen}
-                  resizeMode="contain"
-                />
-              </View>
-              <View style={{ flex: 1, paddingRight: 8 }}>
-                <Text style={styles.inventarioItemNombre}>
-                  [{prod.id}] {prod.nombre}
-                </Text>
-                <Text style={styles.inventarioItemMeta}>
-                  {prod.categoria} · {formatearCOP(prod.precio)} COP · Stock:{' '}
-                  {prod.stock}
-                </Text>
-              </View>
-              <Pressable
-                onPress={() => cargarProductoParaEditar(prod)}
-                style={styles.btnEditarInventario}
-              >
-                <Text style={styles.btnEditarInventarioTexto}>✏️ Editar</Text>
-              </Pressable>
-            </View>
-          ))}
-        </View>
-
-        {/* Control para reiniciar datos de fábrica durante pruebas / sustentación */}
-        <View style={styles.panelSeccionCard}>
-          <Text style={styles.panelSeccionTitulo}>
-            🔄 CONTROL DE PRUEBAS Y PERSISTENCIA LOCAL (HU20)
-          </Text>
-          <Text style={styles.panelSeccionAyuda}>
-            Los cambios de inventario, favoritos, carrito e historial se guardan automáticamente en el dispositivo. Si deseas reiniciar todas las pruebas a su estado original de fábrica, usa el siguiente botón:
-          </Text>
-          <Pressable
-            onPress={restaurarSimulacionCompleta}
-            style={styles.btnRestaurarFabrica}
-          >
-            <Text style={styles.btnRestaurarFabricaTexto}>
-              ⚠️ Restaurar catálogo y estado inicial de fábrica
-            </Text>
-          </Pressable>
-        </View>
-      </ScrollView>
-    );
-  };
-
-  // VISTA 7: FICHA DE MARCA INTEGRADA (HU01: CA01, CA02, CA03)
-  const renderVistaMarca = () => {
-    return (
-      <ScrollView contentContainerStyle={styles.scrollVistaContenedor}>
-        <View style={styles.encabezadoSeccionBox}>
-          <Text style={styles.encabezadoSeccionTitulo}>
-            ⬡ FICHA DE IDENTIDAD DE MARCA (HU01)
-          </Text>
-          <Text style={styles.encabezadoSeccionSub}>
-            Consistencia de identidad comercial, público objetivo, propuesta de valor y categorías.
-          </Text>
-        </View>
-
-        <View style={styles.panelSeccionCard}>
-          <Text style={styles.marcaFichaLabel}>1. NOMBRE COMERCIAL ORIGINAL</Text>
-          <Text style={styles.marcaFichaValorGrande}>
-            {MARCA_INFO.icono} {MARCA_INFO.nombre} [{MARCA_INFO.codigoMarca}]
-          </Text>
-
-          <Text style={styles.marcaFichaLabel}>2. ESLOGAN DE MARCA</Text>
-          <Text style={styles.marcaFichaValor}>{MARCA_INFO.eslogan}</Text>
-
-          <Text style={styles.marcaFichaLabel}>3. PÚBLICO OBJETIVO</Text>
-          <Text style={styles.marcaFichaValor}>{MARCA_INFO.publicoObjetivo}</Text>
-
-          <Text style={styles.marcaFichaLabel}>
-            4. PROPUESTA DE VALOR (MÁXIMO 50 PALABRAS)
-          </Text>
-          <View style={styles.propuestaValorCaja}>
-            <Text style={styles.propuestaValorTexto}>
-              &ldquo;{MARCA_INFO.propuestaValor}&rdquo;
-            </Text>
-          </View>
-
-          <Text style={styles.marcaFichaLabel}>
-            5. CUATRO CATEGORÍAS OFICIALES DEL MARKETPLACE
-          </Text>
+        <Text style={[styles.inputLabel, { color: tema.textoSecundario, fontSize: fs(12) }]}>Categoría *:</Text>
+        <View style={styles.categoriasVendedorGrid}>
           {MARCA_INFO.categorias.map((cat) => {
-            const conf = CATEGORIAS_CONFIG[cat];
+            const activa = vendCategoria === cat;
             return (
-              <View key={cat} style={styles.marcaCategoriaItem}>
-                <Text style={styles.marcaCategoriaIcono}>{conf.icono}</Text>
-                <View style={{ flex: 1 }}>
-                  <Text
-                    style={[
-                      styles.marcaCategoriaTitulo,
-                      { color: conf.colorAcento },
-                    ]}
-                  >
-                    {cat} ({conf.codigo})
-                  </Text>
-                  <Text style={styles.marcaCategoriaDesc}>
-                    {conf.descripcion}
-                  </Text>
-                </View>
-              </View>
+              <Pressable
+                key={cat}
+                onPress={() => setVendCategoria(cat)}
+                style={[
+                  styles.chipCategoria,
+                  {
+                    backgroundColor: activa ? tema.primarioFondo : tema.superficie,
+                    borderColor: activa ? tema.primario : tema.borde,
+                    marginBottom: 8,
+                  },
+                ]}
+              >
+                <Text style={[styles.chipCategoriaTexto, { color: activa ? tema.primario : tema.textoSecundario, fontSize: fs(12) }]}>
+                  {CATEGORIAS_CONFIG[cat]?.icono} {cat}
+                </Text>
+              </Pressable>
             );
           })}
-
-          <Text style={styles.marcaFichaLabel}>
-            6. PALETA DE COLORES PRINCIPALES
-          </Text>
-          {MARCA_INFO.coloresPrincipales.map((col) => (
-            <View key={col.hex} style={styles.colorMuestraRow}>
-              <View
-                style={[styles.colorCirculo, { backgroundColor: col.hex }]}
-              />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.colorNombreTexto}>
-                  {col.nombre} ({col.hex})
-                </Text>
-                <Text style={styles.colorDescTexto}>{col.descripcion}</Text>
-              </View>
-            </View>
-          ))}
         </View>
-      </ScrollView>
-    );
-  };
+
+        <View style={styles.resenaInputsRow}>
+          <View style={{ flex: 1, marginRight: 8 }}>
+            <Text style={[styles.inputLabel, { color: tema.textoSecundario, fontSize: fs(12) }]}>Precio COP *:</Text>
+            <TextInput
+              style={[styles.inputCampo, { backgroundColor: tema.inputFondo, color: tema.textoPrincipal, borderColor: tema.borde, fontSize: fs(13) }]}
+              value={vendPrecio}
+              onChangeText={setVendPrecio}
+              keyboardType="numeric"
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.inputLabel, { color: tema.textoSecundario, fontSize: fs(12) }]}>Stock total *:</Text>
+            <TextInput
+              style={[styles.inputCampo, { backgroundColor: tema.inputFondo, color: tema.textoPrincipal, borderColor: tema.borde, fontSize: fs(13) }]}
+              value={vendStock}
+              onChangeText={setVendStock}
+              keyboardType="numeric"
+            />
+          </View>
+        </View>
+
+        <Text style={[styles.inputLabel, { color: tema.textoSecundario, fontSize: fs(12) }]}>Descripción (mín. 15 chars) *:</Text>
+        <TextInput
+          style={[styles.inputCampo, { backgroundColor: tema.inputFondo, color: tema.textoPrincipal, borderColor: tema.borde, fontSize: fs(13) }]}
+          value={vendDescripcion}
+          onChangeText={setVendDescripcion}
+        />
+
+        <View style={styles.vendedorBotonesRow}>
+          <Pressable
+            onPress={guardarProductoVendedor}
+            style={[styles.btnConfirmarCompra, { flex: 1, backgroundColor: tema.primarioBoton, borderColor: tema.primario }]}
+          >
+            <Text style={[styles.btnConfirmarCompraTexto, { fontSize: fs(13) }]}>
+              {editandoId ? '💾 Actualizar producto' : '➕ Registrar producto'}
+            </Text>
+          </Pressable>
+          {editandoId && (
+            <Pressable
+              onPress={limpiarFormularioVendedor}
+              style={[styles.btnCancelarEdicion, { backgroundColor: tema.errorFondo, borderColor: tema.error }]}
+            >
+              <Text style={[styles.btnCancelarEdicionTexto, { color: tema.error, fontSize: fs(12) }]}>
+                Cancelar
+              </Text>
+            </Pressable>
+          )}
+        </View>
+      </View>
+
+      <View
+        style={[
+          styles.panelSeccionCard,
+          { backgroundColor: tema.tarjeta, borderColor: tema.borde },
+        ]}
+      >
+        <Text style={[styles.panelSeccionTitulo, { color: tema.secundario, fontSize: fs(13) }]}>
+          📦 INVENTARIO ({productos.length} PRODUCTOS)
+        </Text>
+        {productos.map((prod) => (
+          <View key={prod.id} style={[styles.inventarioItemRow, { borderBottomColor: tema.borde }]}>
+            <View style={styles.miniaturaWrapper}>
+              <Image source={obtenerFuenteImagen(prod)} style={styles.miniaturaImagen} resizeMode="contain" />
+            </View>
+            <View style={{ flex: 1, paddingRight: 8 }}>
+              <Text style={[styles.inventarioItemNombre, { color: tema.textoPrincipal, fontSize: fs(12) }]}>
+                [{prod.id}] {prod.nombre}
+              </Text>
+              <Text style={[styles.inventarioItemMeta, { color: tema.textoSuave, fontSize: fs(11) }]}>
+                {prod.marca} · {formatearCOP(prod.precio)} COP · Stock sumado: {obtenerStockProducto(prod)}
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => cargarProductoParaEditar(prod)}
+              style={[styles.btnEditarInventario, { backgroundColor: tema.infoFondo, borderColor: tema.info }]}
+            >
+              <Text style={[styles.btnEditarInventarioTexto, { color: tema.info, fontSize: fs(11) }]}>
+                ✏️ Editar
+              </Text>
+            </Pressable>
+          </View>
+        ))}
+      </View>
+
+      <View
+        style={[
+          styles.panelSeccionCard,
+          { backgroundColor: tema.tarjeta, borderColor: tema.borde },
+        ]}
+      >
+        <Text style={[styles.panelSeccionTitulo, { color: tema.secundario, fontSize: fs(13) }]}>
+          🔄 REINICIO DE PRUEBAS (HU20)
+        </Text>
+        <Pressable
+          onPress={restaurarSimulacionCompleta}
+          style={[styles.btnRestaurarFabrica, { backgroundColor: tema.secundarioFondo, borderColor: tema.secundario }]}
+        >
+          <Text style={[styles.btnRestaurarFabricaTexto, { color: tema.secundario, fontSize: fs(12) }]}>
+            ⚠️ Restaurar datos iniciales de fábrica v2.0
+          </Text>
+        </Pressable>
+      </View>
+    </ScrollView>
+  );
+
+  // VISTA 7: MARCA (HU01)
+  const renderVistaMarca = () => (
+    <ScrollView contentContainerStyle={styles.scrollVistaContenedor}>
+      <View
+        style={[
+          styles.encabezadoSeccionBox,
+          { backgroundColor: tema.tarjeta, borderLeftColor: tema.primario },
+        ]}
+      >
+        <Text style={[styles.encabezadoSeccionTitulo, { color: tema.textoPrincipal, fontSize: fs(15) }]}>
+          ⬡ IDENTIDAD DE MARCA (HU01)
+        </Text>
+        <Text style={[styles.encabezadoSeccionSub, { color: tema.textoSuave, fontSize: fs(12) }]}>
+          Marca propia heredada del Taller 4 y ampliada para Marketplace 2.0.
+        </Text>
+      </View>
+
+      <View
+        style={[
+          styles.panelSeccionCard,
+          { backgroundColor: tema.tarjeta, borderColor: tema.borde },
+        ]}
+      >
+        <Text style={[styles.marcaFichaLabel, { color: tema.secundario, fontSize: fs(11) }]}>
+          1. NOMBRE COMERCIAL
+        </Text>
+        <Text style={[styles.marcaFichaValorGrande, { color: tema.primario, fontSize: fs(20) }]}>
+          {MARCA_INFO.icono} {MARCA_INFO.nombre} [{MARCA_INFO.codigoMarca}]
+        </Text>
+        <Text style={[styles.marcaFichaLabel, { color: tema.secundario, fontSize: fs(11) }]}>
+          2. ESLOGAN 2.0
+        </Text>
+        <Text style={[styles.marcaFichaValor, { color: tema.textoPrincipal, fontSize: fs(13) }]}>
+          {MARCA_INFO.eslogan}
+        </Text>
+        <Text style={[styles.marcaFichaLabel, { color: tema.secundario, fontSize: fs(11) }]}>
+          3. PROPUESTA DE VALOR
+        </Text>
+        <Text style={[styles.marcaFichaValor, { color: tema.textoSecundario, fontSize: fs(13) }]}>
+          {MARCA_INFO.propuestaValor}
+        </Text>
+      </View>
+    </ScrollView>
+  );
 
   // ==========================================================================
-  // 14. ESTRUCTURA PRINCIPAL DE LA APLICACIÓN
+  // 13. BARRA DE NAVEGACIÓN, ACCESIBILIDAD (HU33) Y SHELL PRINCIPAL
   // ==========================================================================
   const pestanasNavegacion = [
     { id: 'catalogo', label: `Catálogo (${productos.length})`, icono: '🛡️' },
+    { id: 'comparador', label: `Comparar (${comparacion.length})`, icono: '⚖️' },
     { id: 'favoritos', label: `Favoritos (${favoritos.length})`, icono: '★' },
-    {
-      id: 'carrito',
-      label: `Carrito (${resumenCarrito.totalUnidades})`,
-      icono: '🛒',
-    },
-    {
-      id: 'historial',
-      label: `Historial (${historialPedidos.length})`,
-      icono: '📜',
-    },
+    { id: 'carrito', label: `Carrito (${resumenCarrito.totalUnidades})`, icono: '🛒' },
+    { id: 'direcciones', label: `Direcciones (${direcciones.length})`, icono: '📍' },
+    { id: 'historial', label: `Pedidos (${historialPedidos.length})`, icono: '📜' },
+    { id: 'notificaciones', label: `Avisos (${noLeidasCount})`, icono: '🔔' },
+    { id: 'soporte', label: `Ayuda (${ticketsSoporte.length})`, icono: '🛟' },
     { id: 'vendedor', label: 'Vendedor', icono: '⚙️' },
     { id: 'marca', label: 'Marca', icono: '⬡' },
   ];
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar style="light" />
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: tema.fondo }]}>
+      <StatusBar style={tema.statusBar} />
 
-      {/* CABECERA DE IDENTIDAD DE MARCA (HU01-CA01, CA02) */}
-      <View style={styles.headerMarca}>
+      <View
+        style={[
+          styles.headerMarca,
+          { backgroundColor: tema.headerFondo, borderBottomColor: tema.primario },
+        ]}
+      >
         <View style={styles.headerTopRow}>
-          <View style={styles.logoBadge}>
+          <View style={[styles.logoBadge, { borderColor: tema.primario }]}>
             <Text style={styles.logoIconoTexto}>{MARCA_INFO.icono}</Text>
-            <Text style={styles.logoCodigoTexto}>{MARCA_INFO.codigoMarca}</Text>
+            <Text style={[styles.logoCodigoTexto, { color: tema.primario }]}>
+              {MARCA_INFO.codigoMarca}
+            </Text>
           </View>
+
           <View style={styles.headerTextosBox}>
-            <Text style={styles.headerNombreMarca}>{MARCA_INFO.nombre}</Text>
-            <Text style={styles.headerEslogan} numberOfLines={2}>
+            <Text style={[styles.headerNombreMarca, { fontSize: fs(18) }]}>
+              {MARCA_INFO.nombre} 2.0
+            </Text>
+            <Text style={[styles.headerEslogan, { fontSize: fs(11) }]} numberOfLines={2}>
               {MARCA_INFO.eslogan}
             </Text>
           </View>
+
+          {/* HU33 · Controles de tema oscuro/claro y accesibilidad (letra grande) */}
+          <View style={styles.accesibilidadControls}>
+            <Pressable
+              onPress={() => setModoOscuro((v) => !v)}
+              style={styles.btnAccesibilidad}
+            >
+              <Text style={styles.btnAccesibilidadTxt}>
+                {modoOscuro ? '☀️ Claro' : '🌙 Oscuro'}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setLetraGrande((v) => !v)}
+              style={[
+                styles.btnAccesibilidad,
+                letraGrande && { borderColor: '#4ADE80', backgroundColor: '#153826' },
+              ]}
+            >
+              <Text style={styles.btnAccesibilidadTxt}>
+                {letraGrande ? 'A+ Activa' : 'A / A+'}
+              </Text>
+            </Pressable>
+          </View>
         </View>
 
-        {/* BARRA DE NAVEGACIÓN PRINCIPAL (HU02-CA01, CA02) */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -2240,6 +3689,7 @@ export default function App() {
                 <Text
                   style={[
                     styles.navTabTexto,
+                    { fontSize: fs(12) },
                     activa && styles.navTabTextoActivo,
                   ]}
                 >
@@ -2251,38 +3701,97 @@ export default function App() {
         </ScrollView>
       </View>
 
-      {/* BANNER DE RETROALIMENTACIÓN TÁCTICA Y VALIDACIONES (HU16-CA01, CA02) */}
       {retroalimentacion.visible && (
         <View
           style={[
             styles.toastBanner,
-            retroalimentacion.tipo === 'exito' && styles.toastExito,
-            retroalimentacion.tipo === 'error' && styles.toastError,
-            retroalimentacion.tipo === 'alerta' && styles.toastAlerta,
+            { backgroundColor: tema.infoFondo, borderLeftColor: tema.info },
+            retroalimentacion.tipo === 'exito' && {
+              backgroundColor: tema.primarioFondo,
+              borderLeftColor: tema.primario,
+            },
+            retroalimentacion.tipo === 'error' && {
+              backgroundColor: tema.errorFondo,
+              borderLeftColor: tema.error,
+            },
+            retroalimentacion.tipo === 'alerta' && {
+              backgroundColor: tema.secundarioFondo,
+              borderLeftColor: tema.secundario,
+            },
           ]}
         >
           <View style={{ flex: 1 }}>
-            <Text style={styles.toastTitulo}>{retroalimentacion.titulo}</Text>
-            <Text style={styles.toastMensaje}>{retroalimentacion.mensaje}</Text>
+            <Text style={[styles.toastTitulo, { color: tema.textoPrincipal, fontSize: fs(11) }]}>
+              {retroalimentacion.titulo}
+            </Text>
+            <Text style={[styles.toastMensaje, { color: tema.textoSecundario, fontSize: fs(12) }]}>
+              {retroalimentacion.mensaje}
+            </Text>
           </View>
           <Pressable
-            onPress={() =>
-              setRetroalimentacion((prev) => ({ ...prev, visible: false }))
-            }
+            onPress={() => setRetroalimentacion((prev) => ({ ...prev, visible: false }))}
             style={styles.toastCerrarBtn}
           >
-            <Text style={styles.toastCerrarTexto}>✕</Text>
+            <Text style={[styles.toastCerrarTexto, { color: tema.textoSuave }]}>✕</Text>
           </Pressable>
         </View>
       )}
 
-      {/* CONTENIDO DINÁMICO SEGÚN LA SECCIÓN ACTIVA */}
       <View style={styles.contenidoPrincipal}>
         {vistaActual === 'catalogo' && renderVistaCatalogo()}
         {vistaActual === 'detalle' && renderVistaDetalle()}
+        {vistaActual === 'comparador' && (
+          <PanelComparador
+            productosComparados={productosComparados}
+            tema={tema}
+            escala={escala}
+            onRetirar={(id) => setComparacion((prev) => prev.filter((x) => x !== id))}
+            onLimpiar={() => setComparacion([])}
+            onAbrirDetalle={abrirDetalleProducto}
+            onIrCatalogo={() => irAVista('catalogo')}
+          />
+        )}
         {vistaActual === 'favoritos' && renderVistaFavoritos()}
         {vistaActual === 'carrito' && renderVistaCarrito()}
+        {vistaActual === 'direcciones' && (
+          <VistaDirecciones
+            direcciones={direcciones}
+            direccionSeleccionadaId={direccionSeleccionadaId}
+            tema={tema}
+            escala={escala}
+            onGuardarDireccion={manejarGuardarDireccion}
+            onMarcarPrincipal={manejarMarcarPrincipal}
+            onSeleccionarParaCompra={manejarSeleccionarDireccion}
+            onEliminarDireccion={manejarEliminarDireccion}
+            onIrCarrito={() => irAVista('carrito')}
+          />
+        )}
         {vistaActual === 'historial' && renderVistaHistorial()}
+        {vistaActual === 'notificaciones' && (
+          <VistaNotificaciones
+            notificaciones={notificaciones}
+            tema={tema}
+            escala={escala}
+            onMarcarLeida={(id) =>
+              setNotificaciones((prev) => marcarNotificacionLeida(prev, id))
+            }
+            onMarcarTodasLeidas={() =>
+              setNotificaciones((prev) => prev.map((n) => ({ ...n, leida: true })))
+            }
+            onIrPedidos={() => irAVista('historial')}
+          />
+        )}
+        {vistaActual === 'soporte' && (
+          <VistaSoporte
+            pedidos={historialPedidos}
+            tickets={ticketsSoporte}
+            pedidoPreseleccionado={pedidoSoportePreseleccionado}
+            tema={tema}
+            escala={escala}
+            onCrearTicket={manejarCrearTicketSoporte}
+            onSimularRespuesta={manejarSimularRespuestaTicket}
+          />
+        )}
         {vistaActual === 'vendedor' && renderVistaVendedor()}
         {vistaActual === 'marca' && renderVistaMarca()}
       </View>
@@ -2290,19 +3799,13 @@ export default function App() {
   );
 }
 
-// ============================================================================
-// ESTILOS TÁCTICOS HALO / UNSC MJOLNIR HUD (StyleSheet)
-// ============================================================================
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#0A0F14',
     paddingTop: Platform.OS === 'android' ? 28 : 0,
   },
   headerMarca: {
-    backgroundColor: '#0E1722',
     borderBottomWidth: 2,
-    borderBottomColor: '#4ADE80',
     paddingHorizontal: 14,
     paddingTop: 10,
     paddingBottom: 8,
@@ -2311,42 +3814,57 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 8,
+    flexWrap: 'wrap',
+    gap: 8,
   },
   logoBadge: {
-    width: 54,
-    height: 54,
+    width: 48,
+    height: 48,
     borderRadius: 10,
     backgroundColor: '#132A1F',
     borderWidth: 2,
-    borderColor: '#4ADE80',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
   },
   logoIconoTexto: {
     color: '#F59E0B',
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '900',
   },
   logoCodigoTexto: {
-    color: '#4ADE80',
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '800',
   },
   headerTextosBox: {
     flex: 1,
+    minWidth: 140,
   },
   headerNombreMarca: {
     color: '#F8FAFC',
-    fontSize: 20,
     fontWeight: '900',
-    letterSpacing: 1.2,
+    letterSpacing: 1,
   },
   headerEslogan: {
     color: '#F59E0B',
-    fontSize: 12,
     fontWeight: '600',
     marginTop: 2,
+  },
+  accesibilidadControls: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  btnAccesibilidad: {
+    backgroundColor: '#162231',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+  },
+  btnAccesibilidadTxt: {
+    color: '#F8FAFC',
+    fontSize: 11,
+    fontWeight: '800',
   },
   navBarScroll: {
     marginTop: 2,
@@ -2369,47 +3887,26 @@ const styles = StyleSheet.create({
   },
   navTabTexto: {
     color: '#94A3B8',
-    fontSize: 12,
     fontWeight: '700',
   },
   navTabTextoActivo: {
     color: '#4ADE80',
   },
-
-  // Banner de Retroalimentación (HU16)
   toastBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#112233',
     borderLeftWidth: 5,
-    borderLeftColor: '#38BDF8',
     paddingHorizontal: 12,
     paddingVertical: 8,
     marginHorizontal: 12,
     marginTop: 8,
     borderRadius: 8,
   },
-  toastExito: {
-    backgroundColor: '#0F291E',
-    borderLeftColor: '#4ADE80',
-  },
-  toastError: {
-    backgroundColor: '#2D1418',
-    borderLeftColor: '#F87171',
-  },
-  toastAlerta: {
-    backgroundColor: '#2B2110',
-    borderLeftColor: '#F59E0B',
-  },
   toastTitulo: {
-    color: '#F8FAFC',
-    fontSize: 11,
     fontWeight: '900',
-    letterSpacing: 0.5,
+    letterSpacing: 0.4,
   },
   toastMensaje: {
-    color: '#CBD5E1',
-    fontSize: 12,
     marginTop: 2,
   },
   toastCerrarBtn: {
@@ -2417,11 +3914,9 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   toastCerrarTexto: {
-    color: '#94A3B8',
     fontSize: 14,
     fontWeight: '800',
   },
-
   contenidoPrincipal: {
     flex: 1,
   },
@@ -2433,21 +3928,24 @@ const styles = StyleSheet.create({
     padding: 12,
     paddingBottom: 36,
   },
-
-  // Panel de filtros y búsqueda en Catálogo
   panelFiltrosContainer: {
-    backgroundColor: '#111A24',
     borderRadius: 12,
     padding: 12,
     borderWidth: 1,
-    borderColor: '#1E2D3D',
     marginBottom: 14,
   },
-  seccionSubtitulo: {
-    color: '#94A3B8',
-    fontSize: 11,
+  bannerComparadorRapido: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 9,
+    marginBottom: 8,
+  },
+  bannerComparadorTxt: {
     fontWeight: '800',
-    letterSpacing: 0.6,
+  },
+  seccionSubtitulo: {
+    fontWeight: '800',
+    letterSpacing: 0.5,
     marginBottom: 6,
     marginTop: 6,
   },
@@ -2458,26 +3956,19 @@ const styles = StyleSheet.create({
   },
   inputBuscador: {
     flex: 1,
-    backgroundColor: '#0A1017',
-    color: '#F8FAFC',
     borderWidth: 1,
-    borderColor: '#2A3F54',
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 9,
-    fontSize: 13,
   },
   btnLimpiarBusqueda: {
     marginLeft: 8,
-    backgroundColor: '#263545',
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 9,
     borderRadius: 8,
   },
   btnLimpiarBusquedaTexto: {
-    color: '#F8FAFC',
-    fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   chipsScroll: {
     marginBottom: 8,
@@ -2486,85 +3977,110 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 20,
-    backgroundColor: '#172331',
     borderWidth: 1,
-    borderColor: '#2A3C52',
     marginRight: 8,
   },
-  chipCategoriaActiva: {
-    backgroundColor: '#153826',
-    borderColor: '#4ADE80',
-  },
   chipCategoriaTexto: {
-    color: '#CBD5E1',
-    fontSize: 12,
     fontWeight: '700',
   },
-  chipCategoriaTextoActivo: {
-    color: '#4ADE80',
+  rangoPrecioRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 6,
+  },
+  inputPrecioRango: {
+    flex: 1,
+    minWidth: 95,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  btnAplicarRango: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    justifyContent: 'center',
+  },
+  btnAplicarRangoTxt: {
+    fontWeight: '800',
+  },
+  errorInlineTxt: {
+    fontWeight: '800',
+    marginBottom: 6,
+  },
+  filtrosExtrasRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 6,
+  },
+  btnToggleDisp: {
+    flex: 1,
+    minWidth: 140,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+  },
+  btnToggleDispTxt: {
+    fontWeight: '800',
+  },
+  btnRestablecer: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+  },
+  btnRestablecerTxt: {
+    fontWeight: '800',
   },
   ordenRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 6,
     marginBottom: 8,
   },
   btnOrden: {
     flex: 1,
+    minWidth: 95,
     paddingVertical: 7,
     paddingHorizontal: 6,
     borderRadius: 8,
-    backgroundColor: '#172331',
     borderWidth: 1,
-    borderColor: '#2A3C52',
     alignItems: 'center',
-    marginHorizontal: 3,
-  },
-  btnOrdenActivo: {
-    backgroundColor: '#2A2110',
-    borderColor: '#F59E0B',
   },
   btnOrdenTexto: {
-    color: '#94A3B8',
-    fontSize: 12,
     fontWeight: '700',
-  },
-  btnOrdenTextoActivo: {
-    color: '#F59E0B',
   },
   barraEstadoCatalogo: {
     marginTop: 4,
     paddingTop: 6,
     borderTopWidth: 1,
-    borderTopColor: '#1E2D3D',
   },
   barraEstadoCatalogoTexto: {
-    color: '#64748B',
-    fontSize: 11,
     fontWeight: '600',
   },
-
-  // Tarjeta de Producto con Imagen Oficial Halo (HU03)
   cardProducto: {
-    backgroundColor: '#111A24',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#223447',
     marginBottom: 14,
     overflow: 'hidden',
-  },
-  cardProductoAgotado: {
-    borderColor: '#522227',
-    opacity: 0.92,
   },
   cardVisualHeader: {
     padding: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#1E2E3E',
   },
   cardTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
     marginBottom: 8,
   },
   badgeCodigo: {
@@ -2575,12 +4091,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(10, 15, 20, 0.75)',
   },
   badgeCodigoTexto: {
-    fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 0.5,
   },
   btnFavoritoIcono: {
-    paddingHorizontal: 10,
+    paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: 6,
     backgroundColor: 'rgba(15, 23, 34, 0.85)',
@@ -2593,12 +4107,11 @@ const styles = StyleSheet.create({
   },
   btnFavoritoTexto: {
     color: '#F59E0B',
-    fontSize: 11,
     fontWeight: '800',
   },
   cardImagenWrapper: {
     width: '100%',
-    height: 175,
+    height: 170,
     backgroundColor: 'rgba(7, 11, 16, 0.55)',
     borderRadius: 10,
     borderWidth: 1,
@@ -2618,44 +4131,45 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cardCategoriaTag: {
-    fontSize: 11,
     fontWeight: '900',
-    letterSpacing: 0.5,
   },
   cardEstrellasTexto: {
     color: '#FBBF24',
-    fontSize: 12,
     fontWeight: '800',
   },
   cardBody: {
     padding: 12,
   },
   cardNombre: {
-    color: '#F8FAFC',
-    fontSize: 16,
     fontWeight: '800',
     marginBottom: 4,
   },
   cardDescripcionBreve: {
-    color: '#94A3B8',
-    fontSize: 12,
     lineHeight: 17,
-    marginBottom: 10,
+    marginBottom: 8,
+  },
+  badgeVariantesCard: {
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginBottom: 8,
+  },
+  badgeVariantesCardTxt: {
+    fontWeight: '700',
   },
   cardPrecioStockRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
     marginBottom: 10,
   },
   cardPrecioLabel: {
-    color: '#64748B',
-    fontSize: 10,
     fontWeight: '700',
   },
   cardPrecioValor: {
-    color: '#4ADE80',
-    fontSize: 18,
     fontWeight: '900',
   },
   badgeStock: {
@@ -2664,83 +4178,49 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     borderWidth: 1,
   },
-  badgeStockDisponible: {
-    backgroundColor: '#0F291E',
-    borderColor: '#22C55E',
-  },
-  badgeStockAgotado: {
-    backgroundColor: '#2D1418',
-    borderColor: '#EF4444',
-  },
   badgeStockTexto: {
-    fontSize: 11,
     fontWeight: '800',
   },
-  badgeStockTextoDisponible: {
-    color: '#4ADE80',
-  },
-  badgeStockTextoAgotado: {
-    color: '#F87171',
-  },
   indicadorEnCarrito: {
-    backgroundColor: '#12263A',
     borderWidth: 1,
-    borderColor: '#38BDF8',
     borderRadius: 6,
     paddingHorizontal: 10,
     paddingVertical: 5,
     marginBottom: 10,
   },
   indicadorEnCarritoTexto: {
-    color: '#38BDF8',
-    fontSize: 12,
     fontWeight: '700',
   },
   cardActionsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 8,
   },
   btnSecundarioCard: {
     flex: 1,
-    backgroundColor: '#1A2736',
+    minWidth: 110,
     borderWidth: 1,
-    borderColor: '#334155',
     paddingVertical: 10,
     borderRadius: 8,
     alignItems: 'center',
-    marginRight: 8,
   },
   btnSecundarioCardTexto: {
-    color: '#E2E8F0',
-    fontSize: 13,
     fontWeight: '700',
   },
   btnPrimarioCard: {
     flex: 1,
-    backgroundColor: '#166534',
+    minWidth: 120,
     borderWidth: 1,
-    borderColor: '#4ADE80',
     paddingVertical: 10,
     borderRadius: 8,
     alignItems: 'center',
   },
-  btnPrimarioCardAgotado: {
-    backgroundColor: '#2B191C',
-    borderColor: '#7F1D1D',
-  },
   btnPrimarioCardTexto: {
-    color: '#F8FAFC',
-    fontSize: 13,
     fontWeight: '800',
   },
-  btnPrimarioCardTextoAgotado: {
-    color: '#F87171',
-  },
-
-  // Miniaturas para Carrito, Historial y Vendedor
   miniaturaWrapper: {
-    width: 58,
-    height: 58,
+    width: 56,
+    height: 56,
     borderRadius: 8,
     backgroundColor: '#0A0F14',
     borderWidth: 1,
@@ -2754,82 +4234,63 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-
-  // Estados vacíos
   estadoVacioBox: {
-    backgroundColor: '#111A24',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#243547',
-    padding: 24,
+    padding: 22,
     alignItems: 'center',
-    marginVertical: 12,
+    marginVertical: 10,
   },
   estadoVacioIcono: {
-    fontSize: 42,
+    fontSize: 40,
     marginBottom: 8,
   },
   estadoVacioTitulo: {
-    color: '#F8FAFC',
-    fontSize: 18,
     fontWeight: '900',
     textAlign: 'center',
     marginBottom: 6,
   },
   estadoVacioSubtitulo: {
-    color: '#94A3B8',
-    fontSize: 13,
     textAlign: 'center',
     lineHeight: 19,
-    marginBottom: 16,
+    marginBottom: 14,
   },
   btnAccionVacio: {
-    backgroundColor: '#166534',
     borderWidth: 1,
-    borderColor: '#4ADE80',
     paddingHorizontal: 18,
     paddingVertical: 11,
     borderRadius: 8,
   },
   btnAccionVacioTexto: {
     color: '#F8FAFC',
-    fontSize: 13,
     fontWeight: '800',
   },
-
-  // Detalle del Producto (HU07)
   detalleTopBar: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
     marginBottom: 12,
   },
   btnVolver: {
-    backgroundColor: '#1A2736',
     borderWidth: 1,
-    borderColor: '#38BDF8',
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 8,
   },
   btnVolverTexto: {
-    color: '#38BDF8',
-    fontSize: 13,
     fontWeight: '800',
   },
   btnFavoritoDetalle: {
-    backgroundColor: '#1A2736',
     borderWidth: 1,
-    borderColor: '#475569',
-    paddingHorizontal: 12,
+    paddingHorizontal: 11,
     paddingVertical: 8,
     borderRadius: 8,
   },
   detalleCard: {
-    backgroundColor: '#111A24',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#26394D',
     overflow: 'hidden',
     marginBottom: 16,
   },
@@ -2837,11 +4298,10 @@ const styles = StyleSheet.create({
     padding: 16,
     alignItems: 'center',
     borderBottomWidth: 1,
-    borderBottomColor: '#223447',
   },
   detalleImagenWrapper: {
     width: '100%',
-    height: 230,
+    height: 220,
     backgroundColor: 'rgba(7, 11, 16, 0.65)',
     borderRadius: 12,
     borderWidth: 1,
@@ -2856,13 +4316,10 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   detalleInsigniaCodigo: {
-    fontSize: 12,
     fontWeight: '900',
-    letterSpacing: 0.8,
   },
   detalleCategoriaTexto: {
     color: '#CBD5E1',
-    fontSize: 13,
     fontWeight: '700',
     marginTop: 4,
   },
@@ -2870,108 +4327,222 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   detalleTitulo: {
-    color: '#F8FAFC',
-    fontSize: 20,
     fontWeight: '900',
     marginBottom: 12,
   },
   detalleMetricasRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 6,
     marginBottom: 14,
   },
   detalleMetricaCaja: {
     flex: 1,
-    backgroundColor: '#0B1118',
+    minWidth: 95,
     borderWidth: 1,
-    borderColor: '#1F2F40',
     borderRadius: 8,
     padding: 8,
-    marginHorizontal: 3,
   },
   detalleMetricaLabel: {
-    color: '#64748B',
-    fontSize: 9,
     fontWeight: '800',
     marginBottom: 2,
   },
   detallePrecioValor: {
-    color: '#4ADE80',
-    fontSize: 14,
     fontWeight: '900',
   },
   detalleStockValor: {
-    fontSize: 13,
     fontWeight: '800',
   },
   detalleEstrellasValor: {
-    color: '#FBBF24',
-    fontSize: 13,
     fontWeight: '800',
   },
+  variantesPanel: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 14,
+  },
+  variantesWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 6,
+    marginBottom: 8,
+  },
+  chipVariante: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  chipVarianteTitulo: {
+    fontWeight: '800',
+  },
+  chipVarianteMeta: {
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  avisoElegirVariante: {
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  cantidadDetalleRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginTop: 4,
+  },
+  cantidadDetalleLabel: {
+    fontWeight: '700',
+  },
   detalleSeccionLabel: {
-    color: '#94A3B8',
-    fontSize: 11,
     fontWeight: '800',
     marginBottom: 4,
   },
   detalleDescripcionTexto: {
-    color: '#E2E8F0',
-    fontSize: 14,
     lineHeight: 21,
     marginBottom: 14,
   },
   detalleSpecsBox: {
-    backgroundColor: '#0A1017',
     borderLeftWidth: 3,
-    borderLeftColor: '#F59E0B',
     padding: 10,
     borderRadius: 6,
     marginBottom: 14,
   },
   detalleSpecsTitulo: {
-    color: '#F59E0B',
-    fontSize: 11,
     fontWeight: '800',
     marginBottom: 3,
   },
   detalleSpecsTexto: {
-    color: '#CBD5E1',
-    fontSize: 12,
+    lineHeight: 17,
   },
   btnAgregarGrande: {
-    backgroundColor: '#166534',
     borderWidth: 1,
-    borderColor: '#4ADE80',
     paddingVertical: 13,
+    paddingHorizontal: 12,
     borderRadius: 8,
     alignItems: 'center',
+    marginBottom: 10,
   },
   btnAgregarGrandeTexto: {
-    color: '#F8FAFC',
-    fontSize: 13,
     fontWeight: '900',
+    textAlign: 'center',
   },
-
-  // Panel de Reseñas (HU19)
+  btnCompartir: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  btnCompartirTxt: {
+    fontWeight: '800',
+  },
+  cajaCompartirPreview: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 10,
+  },
+  cajaCompartirTitulo: {
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  cajaCompartirTexto: {
+    lineHeight: 18,
+  },
+  reposicionBox: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 4,
+  },
+  reposicionTitulo: {
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  reposicionSub: {
+    marginBottom: 8,
+  },
+  reposicionBtnsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  btnSuscripcion: {
+    flex: 1,
+    minWidth: 150,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+  },
+  btnSuscripcionTxt: {
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  btnSimularRepo: {
+    flex: 1,
+    minWidth: 150,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+  },
+  btnSimularRepoTxt: {
+    fontWeight: '800',
+    textAlign: 'center',
+  },
   resenasPanel: {
-    backgroundColor: '#111A24',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#243547',
     padding: 14,
   },
   resenasTitulo: {
-    color: '#F59E0B',
-    fontSize: 14,
     fontWeight: '900',
   },
   resenasPromedioSub: {
-    color: '#CBD5E1',
-    fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
     marginTop: 2,
     marginBottom: 10,
+  },
+  vacioSuaveTxt: {
+    fontStyle: 'italic',
+  },
+  respuestaSimuladaPregunta: {
+    marginTop: 6,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
+  btnSimularRespuestaPreg: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    alignSelf: 'flex-start',
+  },
+  btnSimularRespuestaPregTxt: {
+    fontWeight: '800',
+  },
+  recomendacionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 8,
+  },
+  recomendacionNombre: {
+    fontWeight: '800',
+  },
+  recomendacionMeta: {
+    fontWeight: '700',
+    marginTop: 2,
   },
   estrellasBotonesRow: {
     flexDirection: 'row',
@@ -2979,34 +4550,21 @@ const styles = StyleSheet.create({
   },
   btnEstrellaOpcion: {
     flex: 1,
-    backgroundColor: '#172331',
     borderWidth: 1,
-    borderColor: '#2E4057',
     paddingVertical: 8,
     borderRadius: 6,
     alignItems: 'center',
     marginRight: 6,
   },
-  btnEstrellaOpcionActiva: {
-    backgroundColor: '#3B2A0E',
-    borderColor: '#F59E0B',
-  },
   btnEstrellaOpcionTexto: {
-    color: '#94A3B8',
-    fontSize: 12,
     fontWeight: '800',
-  },
-  btnEstrellaOpcionTextoActivo: {
-    color: '#F59E0B',
   },
   resenaInputsRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   btnGuardarResena: {
-    backgroundColor: '#1E3A5F',
     borderWidth: 1,
-    borderColor: '#38BDF8',
     paddingVertical: 10,
     borderRadius: 8,
     alignItems: 'center',
@@ -3014,101 +4572,72 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   btnGuardarResenaTexto: {
-    color: '#F8FAFC',
-    fontSize: 13,
     fontWeight: '800',
   },
-  listaResenasBox: {
-    marginTop: 4,
-  },
   resenaItemCard: {
-    backgroundColor: '#0B1118',
     borderWidth: 1,
-    borderColor: '#1E2D3D',
     borderRadius: 8,
     padding: 10,
     marginBottom: 8,
   },
   resenaItemHeader: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     marginBottom: 4,
   },
   resenaItemAutor: {
-    color: '#4ADE80',
-    fontSize: 12,
     fontWeight: '800',
   },
   resenaItemEstrellas: {
-    color: '#FBBF24',
-    fontSize: 12,
     fontWeight: '800',
   },
   resenaItemComentario: {
-    color: '#CBD5E1',
-    fontSize: 12,
+    lineHeight: 18,
   },
-
-  // Encabezados de sección y paneles
   encabezadoSeccionBox: {
-    backgroundColor: '#111A24',
     borderRadius: 10,
     borderLeftWidth: 4,
-    borderLeftColor: '#4ADE80',
     padding: 12,
     marginBottom: 12,
   },
   encabezadoSeccionTitulo: {
-    color: '#F8FAFC',
-    fontSize: 15,
     fontWeight: '900',
   },
   encabezadoSeccionSub: {
-    color: '#94A3B8',
-    fontSize: 12,
     marginTop: 2,
+    lineHeight: 17,
   },
   panelSeccionCard: {
-    backgroundColor: '#111A24',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#223447',
     padding: 14,
     marginBottom: 14,
   },
   panelSeccionTitulo: {
-    color: '#F59E0B',
-    fontSize: 13,
     fontWeight: '900',
     marginBottom: 4,
   },
   panelSeccionAyuda: {
-    color: '#94A3B8',
-    fontSize: 12,
     lineHeight: 17,
     marginBottom: 10,
   },
-
-  // Carrito de compras (HU09, HU10, HU11)
   listaCarritoBox: {
     marginBottom: 14,
   },
   listaCarritoHeaderRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 6,
   },
   linkVaciarCarrito: {
-    color: '#F87171',
-    fontSize: 12,
     fontWeight: '700',
   },
   carritoItemCard: {
-    backgroundColor: '#111A24',
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#243649',
     padding: 12,
     marginBottom: 10,
   },
@@ -3118,21 +4647,22 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   carritoItemNombre: {
-    color: '#F8FAFC',
-    fontSize: 14,
     fontWeight: '800',
   },
+  carritoVariantTag: {
+    fontWeight: '700',
+    marginTop: 2,
+  },
   carritoItemMeta: {
-    color: '#94A3B8',
-    fontSize: 11,
     marginTop: 2,
   },
   carritoItemControlesRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 8,
     borderTopWidth: 1,
-    borderTopColor: '#1E2D3D',
     paddingTop: 8,
   },
   cantidadControlesGroup: {
@@ -3143,14 +4673,11 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 6,
-    backgroundColor: '#1B2A3B',
     borderWidth: 1,
-    borderColor: '#38BDF8',
     alignItems: 'center',
     justifyContent: 'center',
   },
   btnCantidadTexto: {
-    color: '#38BDF8',
     fontSize: 18,
     fontWeight: '900',
   },
@@ -3158,73 +4685,50 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   cantidadValorTexto: {
-    color: '#F8FAFC',
-    fontSize: 15,
     fontWeight: '900',
   },
   subtotalLineaBox: {
     alignItems: 'flex-end',
   },
-  subtotalLineaLabel: {
-    color: '#64748B',
-    fontSize: 10,
-  },
+  subtotalLineaLabel: {},
   subtotalLineaValor: {
-    color: '#4ADE80',
-    fontSize: 13,
     fontWeight: '800',
   },
   btnEliminarItem: {
-    backgroundColor: '#2D1418',
     borderWidth: 1,
-    borderColor: '#EF4444',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 6,
   },
   btnEliminarItemTexto: {
-    color: '#F87171',
-    fontSize: 11,
     fontWeight: '800',
   },
-
-  // Cupón y Resumen
   cuponRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   btnAplicarCupon: {
-    backgroundColor: '#1E3A5F',
     borderWidth: 1,
-    borderColor: '#38BDF8',
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 8,
   },
   btnAplicarCuponTexto: {
-    color: '#F8FAFC',
-    fontSize: 13,
     fontWeight: '800',
   },
   cuponActivoBanner: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#0F291E',
     borderWidth: 1,
-    borderColor: '#4ADE80',
     borderRadius: 8,
     padding: 8,
     marginTop: 8,
   },
   cuponActivoTexto: {
-    color: '#4ADE80',
-    fontSize: 12,
     fontWeight: '700',
   },
   linkQuitarCupon: {
-    color: '#F87171',
-    fontSize: 12,
     fontWeight: '800',
   },
   resumenLinea: {
@@ -3232,18 +4736,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginVertical: 4,
   },
-  resumenLabel: {
-    color: '#CBD5E1',
-    fontSize: 13,
-  },
+  resumenLabel: {},
   resumenValor: {
-    color: '#F8FAFC',
-    fontSize: 13,
     fontWeight: '800',
   },
   resumenSeparador: {
     height: 1,
-    backgroundColor: '#223447',
     marginVertical: 8,
   },
   resumenLineaTotal: {
@@ -3253,227 +4751,247 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   resumenTotalLabel: {
-    color: '#F59E0B',
-    fontSize: 15,
     fontWeight: '900',
   },
   resumenTotalValor: {
-    color: '#4ADE80',
-    fontSize: 19,
     fontWeight: '900',
   },
-
-  // Formulario Comprador y Checkout (HU12, HU13)
   avisoSimulacionBox: {
-    backgroundColor: '#102231',
     borderWidth: 1,
-    borderColor: '#38BDF8',
     borderRadius: 8,
     padding: 10,
-    marginBottom: 12,
+    marginTop: 4,
   },
   avisoSimulacionTexto: {
-    color: '#BAE6FD',
-    fontSize: 11,
-    lineHeight: 16,
-    fontWeight: '600',
+    fontWeight: '700',
+    lineHeight: 17,
   },
   inputLabel: {
-    color: '#CBD5E1',
-    fontSize: 12,
     fontWeight: '700',
     marginBottom: 4,
   },
   inputCampo: {
-    backgroundColor: '#0A1017',
-    color: '#F8FAFC',
     borderWidth: 1,
-    borderColor: '#2A3F54',
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 9,
-    fontSize: 13,
     marginBottom: 10,
   },
   municipiosChipsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginBottom: 6,
+    gap: 6,
+    marginBottom: 10,
   },
   chipMunicipio: {
-    backgroundColor: '#172331',
     borderWidth: 1,
-    borderColor: '#2E4057',
     paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingVertical: 6,
     borderRadius: 14,
-    marginRight: 6,
-    marginBottom: 6,
-  },
-  chipMunicipioActivo: {
-    backgroundColor: '#153826',
-    borderColor: '#4ADE80',
   },
   chipMunicipioTexto: {
-    color: '#94A3B8',
-    fontSize: 11,
     fontWeight: '700',
   },
-  chipMunicipioTextoActivo: {
-    color: '#4ADE80',
-  },
   btnValidarPrevia: {
-    backgroundColor: '#1B2D42',
     borderWidth: 1,
-    borderColor: '#38BDF8',
     paddingVertical: 11,
     borderRadius: 8,
     alignItems: 'center',
     marginBottom: 10,
   },
   btnValidarPreviaTexto: {
-    color: '#38BDF8',
-    fontSize: 12,
     fontWeight: '800',
   },
   preConfirmacionResumenBox: {
-    backgroundColor: '#0F291E',
     borderWidth: 1,
-    borderColor: '#4ADE80',
     borderRadius: 8,
     padding: 10,
     marginBottom: 10,
   },
   preConfirmacionTitulo: {
-    color: '#4ADE80',
-    fontSize: 12,
     fontWeight: '900',
     marginBottom: 4,
   },
   preConfirmacionTexto: {
-    color: '#E2E8F0',
-    fontSize: 12,
     marginBottom: 2,
   },
   btnConfirmarCompra: {
-    backgroundColor: '#166534',
     borderWidth: 1,
-    borderColor: '#4ADE80',
     paddingVertical: 13,
     borderRadius: 8,
     alignItems: 'center',
   },
   btnConfirmarCompraTexto: {
     color: '#F8FAFC',
-    fontSize: 13,
     fontWeight: '900',
   },
   confirmacionPedidoBox: {
-    backgroundColor: '#0F291E',
     borderWidth: 2,
-    borderColor: '#4ADE80',
     borderRadius: 12,
     padding: 14,
     marginBottom: 14,
   },
   confirmacionPedidoTag: {
-    color: '#4ADE80',
-    fontSize: 11,
     fontWeight: '900',
   },
   confirmacionPedidoCodigo: {
-    color: '#F8FAFC',
-    fontSize: 18,
     fontWeight: '900',
     marginVertical: 4,
   },
-  confirmacionPedidoDetalle: {
-    color: '#CBD5E1',
-    fontSize: 12,
-  },
+  confirmacionPedidoDetalle: {},
   confirmacionPedidoTotal: {
-    color: '#F59E0B',
-    fontSize: 16,
     fontWeight: '900',
     marginVertical: 4,
-  },
-  confirmacionPedidoAviso: {
-    color: '#94A3B8',
-    fontSize: 11,
-    fontStyle: 'italic',
-    marginTop: 6,
   },
   btnIrHistorialConfirm: {
     marginTop: 10,
-    backgroundColor: '#163A28',
     borderWidth: 1,
-    borderColor: '#4ADE80',
     paddingVertical: 8,
     borderRadius: 6,
     alignItems: 'center',
   },
   btnIrHistorialConfirmTexto: {
-    color: '#4ADE80',
-    fontSize: 12,
     fontWeight: '800',
   },
-
-  // Historial de pedidos (HU15)
   pedidoListaCard: {
-    backgroundColor: '#111A24',
     borderWidth: 1,
-    borderColor: '#243547',
     borderRadius: 10,
     padding: 12,
     marginBottom: 8,
   },
-  pedidoListaCardActivo: {
-    borderColor: '#4ADE80',
-    backgroundColor: '#122620',
-  },
   pedidoListaTop: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 6,
     marginBottom: 4,
   },
   pedidoCodigoTexto: {
-    color: '#F8FAFC',
-    fontSize: 14,
     fontWeight: '900',
   },
-  pedidoTotalBadge: {
-    color: '#4ADE80',
-    fontSize: 14,
+  pedidoEstadoPill: {
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
     fontWeight: '900',
   },
-  pedidoFechaTexto: {
-    color: '#94A3B8',
-    fontSize: 12,
-  },
+  pedidoFechaTexto: {},
   pedidoCompradorTexto: {
-    color: '#CBD5E1',
-    fontSize: 12,
     marginTop: 2,
   },
   pedidoDetallePanel: {
-    backgroundColor: '#111A24',
     borderWidth: 1,
-    borderColor: '#38BDF8',
     borderRadius: 12,
     padding: 14,
     marginTop: 8,
   },
   pedidoDetalleTitulo: {
-    color: '#38BDF8',
-    fontSize: 15,
     fontWeight: '900',
     marginBottom: 6,
   },
   pedidoDetalleMeta: {
-    color: '#CBD5E1',
-    fontSize: 12,
     marginBottom: 2,
+  },
+  timelineItem: {
+    borderLeftWidth: 3,
+    paddingLeft: 10,
+    paddingVertical: 4,
+    marginBottom: 6,
+  },
+  timelineEstado: {
+    fontWeight: '800',
+  },
+  timelineDetalle: {
+    marginTop: 1,
+  },
+  btnAvanceEntrega: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  btnAvanceEntregaTxt: {
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  btnCancelarPedido: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  btnCancelarPedidoTxt: {
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  confirmacionCancelBox: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 8,
+  },
+  confirmacionCancelTxt: {
+    fontWeight: '800',
+    marginBottom: 8,
+  },
+  confirmacionCancelBtns: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  btnConfirmarSi: {
+    flex: 1,
+    minWidth: 130,
+    borderRadius: 6,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+  },
+  btnConfirmarSiTxt: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+  },
+  btnConfirmarNo: {
+    flex: 1,
+    minWidth: 120,
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+  },
+  btnConfirmarNoTxt: {
+    fontWeight: '800',
+  },
+  btnDevolucion: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  btnDevolucionTxt: {
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  btnAyudaPedido: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  btnAyudaPedidoTxt: {
+    fontWeight: '700',
+    textAlign: 'center',
   },
   pedidoArticuloRow: {
     flexDirection: 'row',
@@ -3481,24 +4999,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 6,
     borderBottomWidth: 1,
-    borderBottomColor: '#1B2A3A',
   },
   pedidoArticuloNombre: {
-    color: '#F8FAFC',
-    fontSize: 13,
     fontWeight: '700',
   },
-  pedidoArticuloDetalle: {
-    color: '#94A3B8',
-    fontSize: 11,
-  },
+  pedidoArticuloDetalle: {},
   pedidoArticuloSubtotal: {
-    color: '#4ADE80',
-    fontSize: 13,
     fontWeight: '800',
   },
-
-  // Panel de Vendedor (HU18)
   categoriasVendedorGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -3511,16 +5019,12 @@ const styles = StyleSheet.create({
   },
   btnCancelarEdicion: {
     marginLeft: 8,
-    backgroundColor: '#2D1418',
     borderWidth: 1,
-    borderColor: '#EF4444',
     paddingHorizontal: 14,
     paddingVertical: 13,
     borderRadius: 8,
   },
   btnCancelarEdicionTexto: {
-    color: '#F87171',
-    fontSize: 12,
     fontWeight: '800',
   },
   inventarioItemRow: {
@@ -3529,131 +5033,38 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#1E2D3D',
   },
   inventarioItemNombre: {
-    color: '#F8FAFC',
-    fontSize: 12,
     fontWeight: '700',
   },
-  inventarioItemMeta: {
-    color: '#94A3B8',
-    fontSize: 11,
-  },
+  inventarioItemMeta: {},
   btnEditarInventario: {
-    backgroundColor: '#1B2D42',
     borderWidth: 1,
-    borderColor: '#38BDF8',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 6,
   },
   btnEditarInventarioTexto: {
-    color: '#38BDF8',
-    fontSize: 11,
     fontWeight: '800',
   },
   btnRestaurarFabrica: {
-    backgroundColor: '#2B2110',
     borderWidth: 1,
-    borderColor: '#F59E0B',
     paddingVertical: 11,
     borderRadius: 8,
     alignItems: 'center',
   },
   btnRestaurarFabricaTexto: {
-    color: '#F59E0B',
-    fontSize: 12,
     fontWeight: '800',
   },
-
-  // Ficha de Marca (HU01)
   marcaFichaLabel: {
-    color: '#F59E0B',
-    fontSize: 11,
     fontWeight: '900',
     marginTop: 12,
     marginBottom: 4,
   },
   marcaFichaValorGrande: {
-    color: '#4ADE80',
-    fontSize: 20,
     fontWeight: '900',
   },
   marcaFichaValor: {
-    color: '#E2E8F0',
-    fontSize: 13,
     lineHeight: 19,
-  },
-  propuestaValorCaja: {
-    backgroundColor: '#0F291E',
-    borderLeftWidth: 4,
-    borderLeftColor: '#4ADE80',
-    padding: 12,
-    borderRadius: 8,
-    marginTop: 4,
-  },
-  propuestaValorTexto: {
-    color: '#F8FAFC',
-    fontSize: 13,
-    fontStyle: 'italic',
-    lineHeight: 20,
-  },
-  marcaCategoriaItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#0B1118',
-    borderWidth: 1,
-    borderColor: '#1E2D3D',
-    borderRadius: 8,
-    padding: 10,
-    marginTop: 6,
-  },
-  marcaCategoriaIcono: {
-    fontSize: 24,
-    marginRight: 10,
-  },
-  marcaCategoriaTitulo: {
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  marcaCategoriaDesc: {
-    color: '#94A3B8',
-    fontSize: 11,
-    marginTop: 2,
-  },
-  colorMuestraRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  colorCirculo: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    marginRight: 10,
-    borderWidth: 1,
-    borderColor: '#F8FAFC',
-  },
-  colorNombreTexto: {
-    color: '#F8FAFC',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  colorDescTexto: {
-    color: '#94A3B8',
-    fontSize: 11,
-  },
-
-  // Utilidades de texto
-  textoVerde: {
-    color: '#4ADE80',
-  },
-  textoVerdeBold: {
-    color: '#4ADE80',
-    fontWeight: '800',
-  },
-  textoRojo: {
-    color: '#F87171',
   },
 });
